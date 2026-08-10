@@ -7,6 +7,8 @@
 // Relative — same-origin in production (nginx proxies /synthesize to the
 // companion server), proxied to localhost:5175 by Vite in dev (see
 // vite.config.js).
+import { fetchWithToken } from './auth-token.js'
+
 const SERVER_URL = ''
 const TARGET_SAMPLE_RATE = 24000 // match Cloud TTS / Gemini TTS so paragraphs concatenate cleanly
 
@@ -21,7 +23,7 @@ export const EDGE_TTS_VOICES = [
 export async function synthesizeSpeech(text, voiceName = EDGE_TTS_VOICES[0], rate = '+0%') {
   let res
   try {
-    res = await fetch(`${SERVER_URL}/synthesize`, {
+    res = await fetchWithToken(`${SERVER_URL}/synthesize`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, voice: voiceName, rate }),

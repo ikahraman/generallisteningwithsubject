@@ -36,7 +36,7 @@ Remove one word or short phrase from a real sentence in that paragraph. Mark the
 { "id": "cl1", "paragraphRef": 0, "text": "... _____ ...", "options": ["a","b","c"], "correct": "b", "hint": "key vocab" }
 
 ### dictation
-A short 1-2 sentence segment taken verbatim from that paragraph, in "correctText" (must match the transcript text exactly). Tag "difficulty" as "word", "phrase", or "sentence" depending on segment length.
+A short segment taken verbatim from that paragraph, in "correctText" (must match the transcript text exactly) — never more than ONE sentence, so the listener can hold the whole thing in working memory. Tag "difficulty" as "word" (one word), "phrase" (a short clause, under ~6 words), or "sentence" (one full sentence, never two or more).
 { "id": "dc1", "paragraphRef": 0, "correctText": "...", "difficulty": "sentence" }
 
 ### minimalPairs

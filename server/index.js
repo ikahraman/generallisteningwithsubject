@@ -21,10 +21,26 @@ app.use(express.json({ limit: '25mb' }))
 
 app.get('/health', (req, res) => res.json({ ok: true }))
 
+// Replaces nginx Basic Auth (removed — the browser's HTTP auth cache turned
+// out to not reliably carry over to same-origin fetch() calls, so the app
+// could "load" while every /api request silently failed). Client stores
+// this in localStorage after a one-time prompt(), so it survives far more
+// reliably than a browser's Basic Auth cache does, especially on mobile.
+// Unset (local dev) = auth disabled entirely, so `npm start` still needs
+// zero config.
+const API_TOKEN = process.env.API_TOKEN || ''
+function requireToken(req, res, next) {
+  if (!API_TOKEN || req.get('X-Api-Token') === API_TOKEN) return next()
+  res.status(401).json({ error: 'Invalid or missing API token.' })
+}
+
 // ---------- library data API ----------
 // Backs src/db.js: the browser used to keep all of this in IndexedDB, but
 // that meant a phone and a desktop hitting the same app saw two different
 // libraries. This makes the server the single source of truth instead.
+
+app.use('/api', requireToken)
+app.use('/synthesize', requireToken)
 
 const asyncRoute = (fn) => (req, res) => Promise.resolve(fn(req, res)).catch((err) => {
   console.error('[api]', err)

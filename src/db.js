@@ -2,6 +2,8 @@
 // be Dexie/IndexedDB, but that meant each browser/device had its own
 // separate copy of the library — moving it to the server means a phone and
 // a desktop hitting the same server see the same materials.
+import { fetchWithToken } from './api/auth-token.js'
+
 // Relative — same-origin in production (nginx proxies /api to the
 // companion server), proxied to localhost:5175 by Vite in dev (see
 // vite.config.js).
@@ -10,7 +12,7 @@ const SERVER_URL = ''
 async function request(method, path, body) {
   let res
   try {
-    res = await fetch(`${SERVER_URL}${path}`, {
+    res = await fetchWithToken(`${SERVER_URL}${path}`, {
       method,
       headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
       body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -110,7 +112,7 @@ function audioPath(materialId, kind) {
 export async function saveAudioBlob(materialId, blob, engine, kind) {
   const buf = await blob.arrayBuffer()
   const qs = engine ? `?engine=${encodeURIComponent(engine)}` : ''
-  const res = await fetch(`${SERVER_URL}${audioPath(materialId, kind)}${qs}`, {
+  const res = await fetchWithToken(`${SERVER_URL}${audioPath(materialId, kind)}${qs}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/octet-stream' },
     body: buf,
@@ -121,7 +123,7 @@ export async function saveAudioBlob(materialId, blob, engine, kind) {
 export async function getAudioBlob(materialId, kind) {
   let res
   try {
-    res = await fetch(`${SERVER_URL}${audioPath(materialId, kind)}`)
+    res = await fetchWithToken(`${SERVER_URL}${audioPath(materialId, kind)}`)
   } catch {
     throw new Error('Library server is not reachable — is it running? (npm start inside server/)')
   }
