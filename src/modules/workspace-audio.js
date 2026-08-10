@@ -151,7 +151,7 @@ export function renderAudioSection(cachedAudio, defaultSpeed = 1, defaultEngine 
   return `
     <div class="banner warning" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
       <span>No real audio generated for this material yet. You can listen with your browser's voice below, or generate real audio now.</span>
-      <div style="display:flex; gap:8px; align-items:center; flex-shrink:0;">
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
         <select id="ws-engine-select" title="Engine to generate with">
           <option value="cloud" ${defaultEngine === 'cloud' ? 'selected' : ''}>Google Cloud TTS</option>
           <option value="edge" ${defaultEngine === 'edge' ? 'selected' : ''}>Edge TTS</option>

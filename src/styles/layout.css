@@ -8,6 +8,12 @@
   .page {
     padding: var(--page-padding-mobile);
   }
+  /* Generator/Settings two-column field pairs (topic/subtopic, category/
+     level, word/paragraph count, etc.) — side by side each half is too
+     narrow on a phone for select text and slider labels. */
+  .field.row {
+    flex-direction: column;
+  }
 }
 
 .settings-grid {

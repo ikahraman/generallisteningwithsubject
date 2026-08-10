@@ -142,7 +142,7 @@ function renderAudioStatus(cached, defaultEngine) {
   return `
     <div class="banner warning" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
       <span>No generated lesson audio yet — the word buttons and "Play Full Lesson" still work via live playback, but generating caches it for fast, reliable, cross-device replay.</span>
-      <div style="display:flex; gap:8px; align-items:center; flex-shrink:0;">
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
         <select id="vl-engine-select" title="Engine to generate with">
           <option value="cloud" ${defaultEngine === 'cloud' ? 'selected' : ''}>Google Cloud TTS</option>
           <option value="edge" ${defaultEngine === 'edge' ? 'selected' : ''}>Edge TTS</option>

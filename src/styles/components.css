@@ -133,11 +133,17 @@
   gap: var(--space-3);
 }
 .swatch {
+  position: relative;
   width: 32px;
   height: 32px;
   border-radius: 50%;
   border: 2px solid transparent;
   transition: transform var(--transition-fast);
+}
+.swatch::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
 }
 .swatch:hover {
   transform: scale(1.1);
@@ -228,6 +234,12 @@ input[type='range'] {
   margin-bottom: var(--space-4);
 }
 .modal-close {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: -8px -8px -8px 0;
   font-size: 1.4rem;
   line-height: 1;
   color: var(--text-muted);
@@ -306,6 +318,7 @@ input[type='range'] {
 /* -- audio source row (which TTS engine generated the cached audio) -- */
 .audio-source-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
@@ -385,7 +398,7 @@ input[type='range'] {
   gap: 6px;
 }
 .et-option {
-  padding: 6px 12px;
+  padding: 10px 14px;
   border-radius: var(--radius-sm);
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
@@ -544,17 +557,27 @@ input[type='range'] {
   color: var(--text-secondary);
 }
 .vocab-speak {
+  position: relative;
   width: 24px;
   height: 24px;
   font-size: 0.7rem;
   border-radius: 999px;
   flex-shrink: 0;
 }
+/* Extends the tappable area to ~40px without growing the visual pill —
+   at 24px this is the most-repeated tap target in the app (every
+   vocabulary word/example) and too small to reliably hit on a touchscreen. */
+.vocab-speak::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
 
 /* -- vocab lesson: narrated, teacher-style walkthrough of the same
    vocabulary list, read aloud one word (or the whole thing) at a time -- */
 .vocab-lesson-controls {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-bottom: var(--space-4);
 }
@@ -580,11 +603,17 @@ input[type='range'] {
   color: var(--text-secondary);
 }
 .vl-speak {
+  position: relative;
   width: 24px;
   height: 24px;
   font-size: 0.7rem;
   border-radius: 999px;
   flex-shrink: 0;
+}
+.vl-speak::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
 }
 
 /* -- transcript -- */
@@ -703,6 +732,45 @@ input[type='range'] {
   font-size: 0.75rem;
 }
 
+/* On a narrow screen the 7 controls (play/progress/time/speed/2 repeats/
+   download) don't fit in one row — the fixed-width ones alone (~300px+)
+   leave the flex:1 progress bar squeezed to a few px, making the scrubber
+   practically untappable. Split into two rows via order + a full-width
+   flex-break: row 1 is play/progress/time (progress gets the space back),
+   row 2 is the secondary controls. */
+@media (max-width: 640px) {
+  .audio-player {
+    flex-wrap: wrap;
+  }
+  #ap-play {
+    order: 1;
+  }
+  .ap-progress {
+    order: 2;
+    flex: 1 1 auto;
+  }
+  .ap-time {
+    order: 3;
+  }
+  .audio-player::after {
+    content: '';
+    order: 4;
+    flex-basis: 100%;
+  }
+  .ap-speed {
+    order: 5;
+  }
+  #ap-repeat-sentence {
+    order: 6;
+  }
+  #ap-repeat-paragraph {
+    order: 7;
+  }
+  #ap-download {
+    order: 8;
+  }
+}
+
 /* -- library: folders -- */
 .lib-folder-list {
   display: flex;
@@ -784,6 +852,8 @@ input[type='range'] {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
   padding: var(--space-3) var(--space-4);
   background: var(--bg-elevated);
   border: 1px solid var(--accent);
@@ -792,6 +862,7 @@ input[type='range'] {
 }
 .lib-bulk-bar .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -813,6 +884,19 @@ input[type='range'] {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+.card-select {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin: -8px 0 -8px -8px;
+  cursor: pointer;
+}
+.card-select input {
+  width: 18px;
+  height: 18px;
 }
 .card-title-sm {
   font-size: 1rem;
@@ -924,6 +1008,19 @@ input[type='range'] {
   white-space: nowrap;
 }
 
+/* At the 30-day range, 30 flex:1 columns compress past their label's own
+   width on a phone and the day numbers overlap. Scrolling horizontally
+   with a fixed column width keeps every label readable instead. */
+@media (max-width: 640px) {
+  .bar-chart {
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .bar-chart-col {
+    flex: 0 0 28px;
+  }
+}
+
 /* -- statistics: streak calendar -- */
 .streak-row {
   display: flex;
@@ -995,8 +1092,8 @@ input[type='range'] {
 .sidebar-toggle {
   flex-shrink: 0;
   margin: 0 var(--space-3) var(--space-3);
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1073,25 +1170,79 @@ input[type='range'] {
   text-align: center;
 }
 
-/* Collapse to an icon-only rail on narrow screens — the app is desktop-first,
-   but a fixed 240px sidebar leaves almost nothing for content on a phone. */
+/* Mobile top bar (hamburger + brand) — hidden on desktop, where the sidebar
+   is always visible and this row would just be redundant chrome. */
+.mobile-topbar {
+  display: none;
+}
+.mobile-menu-btn {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.sidebar-backdrop {
+  display: none;
+}
+
+/* On narrow screens the sidebar becomes an off-canvas drawer (opened via
+   .mobile-menu-btn, toggled with .mobile-open) instead of the permanent
+   240px column — that would leave almost nothing for content on a phone,
+   and even the icon-only rail this replaced still permanently ate ~17% of
+   a 375px-wide screen on every single page. */
 @media (max-width: 640px) {
-  .app-sidebar {
-    width: 64px;
+  #app-shell {
+    flex-direction: column;
   }
-  .sidebar-brand {
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-secondary);
+    flex-shrink: 0;
+  }
+  .mobile-topbar-brand {
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 45;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--transition-fast);
+  }
+  .sidebar-backdrop.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .app-sidebar,
+  .app-sidebar.collapsed {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: min(80vw, 300px);
+    transform: translateX(-100%);
+    z-index: 50;
+    box-shadow: var(--shadow);
+    transition: transform var(--transition-fast);
+  }
+  .app-sidebar.mobile-open {
+    transform: translateX(0);
+  }
+  /* The in-drawer collapse toggle only makes sense for the desktop rail
+     mode; the drawer has its own open/close via .mobile-menu-btn + backdrop. */
+  .sidebar-toggle {
     display: none;
-  }
-  .sidebar-link {
-    justify-content: center;
-    padding: 12px 0;
-  }
-  .sidebar-link span:not(.sidebar-icon) {
-    display: none;
-  }
-  .sidebar-icon {
-    font-size: 1.15rem;
-    width: auto;
   }
 }
 
@@ -1101,6 +1252,10 @@ input[type='range'] {
   left: 50%;
   bottom: 24px;
   transform: translate(-50%, 12px);
+  max-width: calc(100vw - 32px);
+  width: max-content;
+  white-space: normal;
+  text-align: center;
   background: var(--bg-elevated);
   color: var(--text-primary);
   border: 1px solid var(--border);

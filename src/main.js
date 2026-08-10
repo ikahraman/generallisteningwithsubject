@@ -28,7 +28,17 @@ function parseHash() {
   return { route: ROUTES[hash] ? hash : 'dashboard' }
 }
 
+// The mobile drawer's own state lives on these two elements (a class each)
+// rather than in a JS variable, since sidebarEl's innerHTML — but not the
+// <aside> itself — gets replaced on every route change; reading classList
+// off the persistent elements avoids needing to restore state after that.
+function closeMobileSidebar() {
+  document.querySelector('#app-sidebar')?.classList.remove('mobile-open')
+  document.querySelector('#sidebar-backdrop')?.classList.remove('visible')
+}
+
 async function render() {
+  closeMobileSidebar()
   const { route, materialId } = parseHash()
   const sidebarEl = document.querySelector('#app-sidebar')
   sidebarEl.innerHTML = sidebarHTML(route === 'workspace' ? null : route)
@@ -58,9 +68,20 @@ async function boot() {
   applyAccent(settings.accentColor || 'indigo')
 
   document.querySelector('#app-shell').innerHTML = `
+    <div class="mobile-topbar">
+      <button id="mobile-menu-btn" class="mobile-menu-btn" aria-label="Open menu" title="Open menu">☰</button>
+      <span class="mobile-topbar-brand">Academic English Studio</span>
+    </div>
+    <div id="sidebar-backdrop" class="sidebar-backdrop"></div>
     <aside id="app-sidebar" class="app-sidebar"></aside>
     <div id="app" class="app-content"></div>
   `
+
+  document.querySelector('#mobile-menu-btn').addEventListener('click', () => {
+    document.querySelector('#app-sidebar').classList.add('mobile-open')
+    document.querySelector('#sidebar-backdrop').classList.add('visible')
+  })
+  document.querySelector('#sidebar-backdrop').addEventListener('click', closeMobileSidebar)
 
   window.addEventListener('hashchange', render)
   await render()
