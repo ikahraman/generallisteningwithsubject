@@ -9,6 +9,7 @@
 import { addMaterial, updateMaterial, getAllMaterials } from '../db.js'
 import { parseGeminiMaterialJSON } from '../utils/validators.js'
 import { countWords, estimateDuration, slugify } from '../utils/helpers.js'
+import { copyText } from '../utils/clipboard.js'
 import { showToast } from '../components/toast.js'
 import { TOPIC_PRESETS } from './generator-topics.js'
 import { MODES } from './material-modes.js'
@@ -211,9 +212,9 @@ function wireEvents(root) {
   })
 
   root.querySelector('#cs-copy-prompt')?.addEventListener('click', async () => {
-    const text = root.querySelector('#cs-prompt')?.value || ''
-    await navigator.clipboard.writeText(text)
-    showToast('Prompt copied to clipboard')
+    const textarea = root.querySelector('#cs-prompt')
+    const ok = await copyText(textarea?.value || '', textarea)
+    showToast(ok ? 'Prompt copied to clipboard' : 'Copy failed — select the text and copy manually')
   })
 
   root.querySelector('#cs-response')?.addEventListener('input', (e) => (pastedResponse = e.target.value))

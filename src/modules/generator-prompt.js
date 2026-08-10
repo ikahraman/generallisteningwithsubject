@@ -1,5 +1,6 @@
 import { openModal, closeModal } from '../components/modal.js'
 import { showToast } from '../components/toast.js'
+import { copyText } from '../utils/clipboard.js'
 import { MODES, GROUP_DESCRIPTIONS } from './material-modes.js'
 import { buildEarTrainingSection, EAR_TRAINING_SCHEMA_SNIPPET } from './generator-prompt-eartraining.js'
 
@@ -105,9 +106,9 @@ export function openPromptModal(prompt, { onApply, onReset }) {
         variant: 'ghost',
         closeOnClick: false,
         onClick: async () => {
-          const text = document.getElementById('prompt-editor')?.value ?? prompt
-          await navigator.clipboard.writeText(text)
-          showToast('Prompt copied to clipboard')
+          const textarea = document.getElementById('prompt-editor')
+          const ok = await copyText(textarea?.value ?? prompt, textarea)
+          showToast(ok ? 'Prompt copied to clipboard' : 'Copy failed — select the text and copy manually')
         },
       },
       {
