@@ -98,6 +98,13 @@ app.delete('/api/tags/:id', asyncRoute(async (req, res) => {
   res.json({ ok: true })
 }))
 
+// Lightweight — metadata for every cached track (kind/engine/createdAt),
+// no binary. Lets the client decide what to show/switch between before
+// downloading any actual audio.
+app.get('/api/audio-meta/:materialId', asyncRoute(async (req, res) => {
+  res.json(await store.getAudioTracks(Number(req.params.materialId)))
+}))
+
 // :kind distinguishes a material's main listening-passage audio (omitted)
 // from other narrations for the same material, e.g. 'vocab-lesson'.
 app.get('/api/audio/:materialId/:kind?', asyncRoute(async (req, res) => {

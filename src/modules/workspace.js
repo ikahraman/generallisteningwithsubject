@@ -1,9 +1,9 @@
-import { getMaterial, getAudioBlob, updateMaterial, toggleFavorite, recordMaterialStudied, addStudyLogEntry } from '../db.js'
+import { getMaterial, updateMaterial, toggleFavorite, recordMaterialStudied, addStudyLogEntry } from '../db.js'
 import { getSetting } from '../db.js'
 import { flattenSentences } from '../api/material-player.js'
 import { questionBlockHTML, wireQuestionBlock } from '../components/question-block.js'
 import { MODE_LABELS, GROUP_LABELS, hasAudioMode } from './material-modes.js'
-import { renderAudioSection, setupAudioPlayer, destroyAudioPlayer } from './workspace-audio.js'
+import { renderAudioSection, setupAudioPlayer, destroyAudioPlayer, loadAudioState } from './workspace-audio.js'
 import { renderVocabCard, wireVocabCard, vocabMatchTitle } from './workspace-vocab.js'
 import { renderVocabLessonPanel, wireVocabLessonPanel } from './workspace-vocab-lesson.js'
 import { renderEarTrainingPanel, wireEarTrainingPanel } from './workspace-ear-training.js'
@@ -28,9 +28,8 @@ export async function renderWorkspace(container, materialId) {
   material.lastOpenedAt = new Date().toISOString()
   updateMaterial(material.id, { lastOpenedAt: material.lastOpenedAt })
 
-  const cachedAudio = hasAudioMode(material.mode) ? await getAudioBlob(material.id) : null
+  const audioState = hasAudioMode(material.mode) ? await loadAudioState(material.id) : null
   const defaultSpeed = await getSetting('defaultSpeed', 1)
-  const defaultEngine = await getSetting('defaultTtsEngine', 'cloud')
 
   container.innerHTML = `
     <div class="workspace">
@@ -43,7 +42,7 @@ export async function renderWorkspace(container, materialId) {
         <button class="icon-btn" id="ws-favorite" aria-label="Toggle favorite">${material.isFavorite ? '★' : '☆'}</button>
       </header>
       <main class="ws-main">
-        ${hasAudioMode(material.mode) ? `<div class="ws-main-audio">${renderAudioSection(cachedAudio, defaultSpeed, defaultEngine)}</div>` : ''}
+        ${hasAudioMode(material.mode) ? `<div class="ws-main-audio">${renderAudioSection(audioState, defaultSpeed)}</div>` : ''}
         <div class="tabs" id="ws-tabs">
           ${tabIds()
             .map((t) => `<button data-tab="${t}" class="${t === activeTab ? 'active' : ''}">${tabLabel(t)}</button>`)
@@ -61,7 +60,7 @@ export async function renderWorkspace(container, materialId) {
   wireHeader(container)
   wireMainPanel(container)
   if (hasAudioMode(material.mode)) {
-    await setupAudioPlayer(container, material, sentences, () => renderWorkspace(container, material.id))
+    await setupAudioPlayer(container, material, sentences, audioState, () => renderWorkspace(container, material.id))
   }
 }
 

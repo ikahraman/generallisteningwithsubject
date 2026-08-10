@@ -1,8 +1,6 @@
 import { getSetting, addMaterial } from '../db.js'
-import { generateMaterialJSON, GEMINI_TTS_VOICES } from '../api/gemini.js'
-import { CLOUD_TTS_VOICES } from '../api/cloud-tts.js'
-import { EDGE_TTS_VOICES } from '../api/edge-tts.js'
-import { generateAndCacheAudio } from '../api/tts.js'
+import { generateMaterialJSON } from '../api/gemini.js'
+import { generateBothEngines, DEFAULT_VOICES } from '../api/tts.js'
 import { parseGeminiMaterialJSON } from '../utils/validators.js'
 import { countWords, estimateDuration, formatDate } from '../utils/helpers.js'
 import { TOPIC_PRESETS } from './generator-topics.js'
@@ -12,7 +10,6 @@ import { buildGenerationPrompt, openPromptModal } from './generator-prompt.js'
 const CATEGORIES = ['Medicine', 'Environment', 'Technology', 'Business', 'Education', 'Science', 'General']
 const LEVELS = ['A1+', 'A2', 'B1', 'B2', 'C1', 'C2']
 const ENGINE_LABELS = { cloud: 'Cloud TTS', edge: 'Edge TTS', gemini: 'Gemini TTS' }
-const VOICE_LISTS = { cloud: CLOUD_TTS_VOICES, edge: EDGE_TTS_VOICES }
 
 let formState = {
   topic: '',
@@ -23,8 +20,7 @@ let formState = {
   mode: 'selective',
   wordCount: MODES.selective.defaultWords,
   paragraphCount: MODES.selective.defaultParagraphs,
-  ttsEngine: 'cloud',
-  voice: CLOUD_TTS_VOICES[0],
+  ttsEngine: 'both', // 'both' (Cloud + Edge, independently) or 'browser' (skip pre-generation)
   speed: 'normal',
 }
 let customPrompt = null // set when the user edits & locks in a prompt via the modal
@@ -109,25 +105,16 @@ export async function renderGenerator(container) {
         ${
           modeConfig.hasAudio
             ? `
-        <div class="field row">
-          <div style="flex:1;">
-            <label class="field-label" for="gen-tts">Audio</label>
-            <select id="gen-tts">
-              <option value="cloud" ${formState.ttsEngine === 'cloud' ? 'selected' : ''}>Generate with Google Cloud TTS</option>
-              <option value="edge" ${formState.ttsEngine === 'edge' ? 'selected' : ''}>Generate with Edge TTS</option>
-              <option value="browser" ${formState.ttsEngine === 'browser' ? 'selected' : ''}>Use browser TTS at study time</option>
-            </select>
-          </div>
-          <div style="flex:1;" id="gen-voice-wrap" ${formState.ttsEngine === 'browser' ? 'hidden' : ''}>
-            <label class="field-label" for="gen-voice">Voice</label>
-            <select id="gen-voice">
-              ${(VOICE_LISTS[formState.ttsEngine] || []).map((v) => `<option ${v === formState.voice ? 'selected' : ''}>${v}</option>`).join('')}
-            </select>
-          </div>
+        <div class="field">
+          <label class="field-label" for="gen-tts">Audio</label>
+          <select id="gen-tts">
+            <option value="both" ${formState.ttsEngine === 'both' ? 'selected' : ''}>Generate audio (Google Cloud + Edge TTS)</option>
+            <option value="browser" ${formState.ttsEngine === 'browser' ? 'selected' : ''}>Use browser TTS at study time</option>
+          </select>
         </div>
         ${
           formState.ttsEngine !== 'browser'
-            ? '<p class="card-hint">Falls back to Gemini TTS automatically if this engine is unavailable.</p>'
+            ? '<p class="card-hint">Generates both engines independently — one failing (e.g. Cloud quota) doesn\'t skip the other, and Workspace lets you switch between them. Falls back to Gemini TTS only if both fail.</p>'
             : ''
         }
         <div class="field">
@@ -250,10 +237,8 @@ function wireEvents(root) {
 
   root.querySelector('#gen-tts')?.addEventListener('change', (e) => {
     formState.ttsEngine = e.target.value
-    if (VOICE_LISTS[formState.ttsEngine]) formState.voice = VOICE_LISTS[formState.ttsEngine][0]
     renderGenerator(root)
   })
-  root.querySelector('#gen-voice')?.addEventListener('change', (e) => (formState.voice = e.target.value))
 
   root.querySelector('#gen-submit')?.addEventListener('click', () => handleGenerate(root))
 
@@ -324,19 +309,17 @@ async function handleGenerate(root) {
 
     if (MODES[formState.mode].hasAudio && formState.ttsEngine !== 'browser') {
       try {
-        progressText = `Generating audio via ${ENGINE_LABELS[formState.ttsEngine]} (paragraph 1)…`
+        progressText = 'Generating audio…'
         await renderGenerator(root)
-        const voices = {
-          preferredEngine: formState.ttsEngine,
-          cloudVoice: formState.ttsEngine === 'cloud' ? formState.voice : CLOUD_TTS_VOICES[0],
-          edgeVoice: formState.ttsEngine === 'edge' ? formState.voice : EDGE_TTS_VOICES[0],
-          geminiVoice: GEMINI_TTS_VOICES[0],
-          speed: formState.speed,
-        }
-        await generateAndCacheAudio(id, parsed.paragraphs, apiKey, voices, (engine, i, n) => {
+        const voices = { ...DEFAULT_VOICES, speed: formState.speed }
+        const results = await generateBothEngines(id, parsed.paragraphs, apiKey, voices, (engine, i, n) => {
           progressText = `Generating audio via ${ENGINE_LABELS[engine]} (paragraph ${i}/${n})…`
         })
         material.audioCached = true
+        if (!results.cloud || !results.edge) {
+          const failed = [!results.cloud && 'Cloud', !results.edge && 'Edge'].filter(Boolean).join(' and ')
+          errorMessage = `${failed} TTS failed — the other engine's audio is cached and ready instead.`
+        }
       } catch (audioErr) {
         // Non-fatal: material is saved; Workspace will fall back to browser TTS.
         errorMessage = `Material saved, but audio generation failed: ${audioErr.message}. Browser TTS will be used instead.`

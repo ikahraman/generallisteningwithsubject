@@ -2,10 +2,10 @@
 // workspace.js to stay under the 400-line-per-file rule. `material` is
 // passed in by reference (not duplicated module state) so mutations here
 // (bookmarks) are visible to workspace.js without a shared-state module.
-import { getAudioBlob } from '../db.js'
+import { getAudioBlob, getAudioTracks } from '../db.js'
 import { getSetting } from '../db.js'
 import { MaterialPlayer } from '../api/material-player.js'
-import { generateAndCacheAudio, generateAndCacheAudioWithEngine, DEFAULT_VOICES } from '../api/tts.js'
+import { generateBothEngines, DEFAULT_VOICES } from '../api/tts.js'
 import { synthesizeSpeech as synthesizeEdgeSpeech, EDGE_TTS_VOICES } from '../api/edge-tts.js'
 import { synthesizeSpeech as synthesizeCloudSpeech, CLOUD_TTS_VOICES } from '../api/cloud-tts.js'
 import { pcmToWavBlob } from '../api/gemini.js'
@@ -16,7 +16,32 @@ import { downloadBlob, slugify, pickBestVoice } from '../utils/helpers.js'
 
 export const ENGINE_LABELS = { cloud: 'Google Cloud TTS', edge: 'Edge TTS', gemini: 'Gemini TTS' }
 
+// Which cached track plays by default: Cloud > Edge > Gemini (last-resort
+// safety net) > the unlabeled legacy slot from before materials could have
+// more than one track.
+const TRACK_PRIORITY = ['cloud', 'edge', 'gemini', null]
+
 let player = null
+// Remembers a manual track switch for the current workspace visit (reset
+// per material) — loadAudioState honors it instead of always resetting to
+// TRACK_PRIORITY's default, so switching tracks doesn't get undone by the
+// full re-render that switching (and generating) already triggers.
+let trackOverride = null
+
+// Fetches only track *metadata* (cheap) to decide which one to actually
+// play, then downloads just that one track's audio — not every track that
+// happens to be cached.
+export async function loadAudioState(materialId) {
+  const tracks = await getAudioTracks(materialId)
+  if (!tracks.length) return { tracks: [], current: null }
+  const override = trackOverride?.materialId === materialId ? trackOverride.kind : undefined
+  const defaultKind =
+    override !== undefined && tracks.some((t) => (t.kind || null) === override)
+      ? override
+      : TRACK_PRIORITY.find((kind) => tracks.some((t) => (t.kind || null) === kind))
+  const row = await getAudioBlob(materialId, defaultKind || undefined)
+  return { tracks, current: row ? { ...row, kind: defaultKind } : null }
+}
 
 // Plain browser-voice playback — the last-resort fallback when neither Edge
 // nor Cloud TTS is reachable (see speakVocabText/speakStudyText below).
@@ -132,18 +157,26 @@ function playQuickPcm(pcmBytes, sampleRate, rate) {
 // Shown instead of a plain audio player whenever a listening-mode material
 // has no cached audio yet — e.g. generation failed at creation time (quota,
 // "high demand", etc.) and silently fell back to browser TTS. Browser TTS
-// still plays below so the material is usable immediately either way. The
-// engine select here lets the user pick Cloud/Edge for this one generation
-// without having to go change the Settings default first.
-export function renderAudioSection(cachedAudio, defaultSpeed = 1, defaultEngine = 'cloud') {
-  if (cachedAudio?.blob) {
-    const engine = cachedAudio.engine
-    const label = engine ? ENGINE_LABELS[engine] || engine : 'unknown source'
-    const showUpgrade = engine && engine !== 'cloud'
+// still plays below so the material is usable immediately either way.
+// `audioState` is the result of loadAudioState() — when it has more than
+// one track (Cloud + Edge both cached), a switcher lets the user pick
+// which one plays without regenerating anything.
+export function renderAudioSection(audioState, defaultSpeed = 1) {
+  const { tracks = [], current } = audioState || {}
+  if (current?.blob) {
+    const label = ENGINE_LABELS[current.engine] || current.engine || 'unknown source'
+    const others = tracks.filter((t) => (t.kind || null) !== (current.kind || null))
     return `
       <div class="audio-source-row">
         <span class="badge">🔊 ${label}</span>
-        ${showUpgrade ? `<button class="btn ghost" id="ws-upgrade-google-tts">⬆ Generate with Google TTS</button>` : ''}
+        ${
+          others.length
+            ? `<select id="ws-track-select" title="Switch audio track">
+                <option value="${current.kind ?? ''}">${label} (current)</option>
+                ${others.map((t) => `<option value="${t.kind ?? ''}">${ENGINE_LABELS[t.engine] || t.engine}</option>`).join('')}
+              </select>`
+            : ''
+        }
       </div>
       ${audioPlayerHTML(defaultSpeed)}
     `
@@ -151,13 +184,7 @@ export function renderAudioSection(cachedAudio, defaultSpeed = 1, defaultEngine 
   return `
     <div class="banner warning" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
       <span>No real audio generated for this material yet. You can listen with your browser's voice below, or generate real audio now.</span>
-      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-        <select id="ws-engine-select" title="Engine to generate with">
-          <option value="cloud" ${defaultEngine === 'cloud' ? 'selected' : ''}>Google Cloud TTS</option>
-          <option value="edge" ${defaultEngine === 'edge' ? 'selected' : ''}>Edge TTS</option>
-        </select>
-        <button class="btn primary" id="ws-generate-speech">🔊 Generate Speech</button>
-      </div>
+      <button class="btn primary" id="ws-generate-speech">🔊 Generate Speech (Cloud + Edge)</button>
     </div>
     ${audioPlayerHTML(defaultSpeed)}
   `
@@ -172,19 +199,23 @@ export function destroyAudioPlayer() {
  * @param {HTMLElement} root
  * @param {object} material
  * @param {Array} sentences
- * @param {() => Promise<void>} onAudioChanged called after audio is generated so the caller can re-render
+ * @param {{tracks: Array, current: object|null}} audioState from loadAudioState() — passed in rather than re-fetched, since the caller already loaded it to render renderAudioSection().
+ * @param {() => Promise<void>} onAudioChanged called after audio is generated/switched so the caller can re-render
  */
-export async function setupAudioPlayer(root, material, sentences, onAudioChanged) {
+export async function setupAudioPlayer(root, material, sentences, audioState, onAudioChanged) {
   root.querySelector('#ws-generate-speech')?.addEventListener('click', () => generateSpeechInPlace(root, material, onAudioChanged))
-  root.querySelector('#ws-upgrade-google-tts')?.addEventListener('click', () => upgradeToGoogleTts(root, material, onAudioChanged))
+  root.querySelector('#ws-track-select')?.addEventListener('change', (e) => {
+    trackOverride = { materialId: material.id, kind: e.target.value || null }
+    destroyAudioPlayer()
+    onAudioChanged()
+  })
 
-  const audioRow = await getAudioBlob(material.id)
   const defaultVoice = await getSetting('defaultVoice', '')
   const defaultSpeed = await getSetting('defaultSpeed', 1)
 
   player = new MaterialPlayer({
     sentences,
-    audioBlob: audioRow?.blob,
+    audioBlob: audioState?.current?.blob,
     voiceURI: defaultVoice,
     rate: defaultSpeed,
   })
@@ -216,24 +247,19 @@ export async function requireApiKey() {
   return apiKey || null
 }
 
-// Runs TTS generation with a Gemini-TTS safety net (engineOverride wins over
-// the Settings default, e.g. from the inline picker in the "no audio yet"
-// banner); returns null (after showing the "no key" modal) instead of
-// throwing when the key is missing, so callers only handle the real-failure case.
-async function ensureAudioGenerated(material, engineOverride) {
+// Generates both Cloud and Edge TTS (Gemini as a last-resort safety net if
+// both fail — see generateBothEngines), then resolves to whichever track
+// loadAudioState now picks as the default so callers get a blob back
+// immediately (e.g. to download) without a second round trip. Returns null
+// (after showing the "no key" modal) instead of throwing when the key is
+// missing, so callers only handle the real-failure case.
+async function ensureAudioGenerated(material, onProgress) {
   const apiKey = await requireApiKey()
   if (!apiKey) return null
-  const preferredEngine = engineOverride || (await getSetting('defaultTtsEngine', 'cloud'))
-  return generateAndCacheAudio(material.id, material.paragraphs, apiKey, { ...DEFAULT_VOICES, preferredEngine })
-}
-
-// Forces exactly one engine, no Gemini fallback — used by "Generate with
-// Google TTS" so a failure (e.g. quota) surfaces as a real error instead of
-// silently caching Gemini audio again under a button that promised Google's.
-async function ensureAudioGeneratedWithEngine(material, engine) {
-  const apiKey = await requireApiKey()
-  if (!apiKey) return null
-  return generateAndCacheAudioWithEngine(material.id, material.paragraphs, apiKey, DEFAULT_VOICES, engine)
+  await generateBothEngines(material.id, material.paragraphs, apiKey, DEFAULT_VOICES, onProgress)
+  trackOverride = null
+  const state = await loadAudioState(material.id)
+  return state.current?.blob || null
 }
 
 export function showAudioErrorModal(err) {
@@ -258,11 +284,10 @@ async function generateAudioOnDemand(root, material, onAudioChanged) {
 
 async function generateSpeechInPlace(root, material, onAudioChanged) {
   const btn = root.querySelector('#ws-generate-speech')
-  const engine = root.querySelector('#ws-engine-select')?.value
   const resetBtn = () => {
     if (btn) {
       btn.disabled = false
-      btn.textContent = '🔊 Generate Speech'
+      btn.textContent = '🔊 Generate Speech (Cloud + Edge)'
     }
   }
   if (btn) {
@@ -270,30 +295,9 @@ async function generateSpeechInPlace(root, material, onAudioChanged) {
     btn.innerHTML = '<span class="spinner"></span> Generating…'
   }
   try {
-    const blob = await ensureAudioGenerated(material, engine)
-    if (!blob) return resetBtn()
-    destroyAudioPlayer()
-    await onAudioChanged()
-  } catch (err) {
-    resetBtn()
-    showAudioErrorModal(err)
-  }
-}
-
-async function upgradeToGoogleTts(root, material, onAudioChanged) {
-  const btn = root.querySelector('#ws-upgrade-google-tts')
-  const resetBtn = () => {
-    if (btn) {
-      btn.disabled = false
-      btn.textContent = '⬆ Generate with Google TTS'
-    }
-  }
-  if (btn) {
-    btn.disabled = true
-    btn.innerHTML = '<span class="spinner"></span> Generating…'
-  }
-  try {
-    const blob = await ensureAudioGeneratedWithEngine(material, 'cloud')
+    const blob = await ensureAudioGenerated(material, (engine, i, n) => {
+      if (btn) btn.innerHTML = `<span class="spinner"></span> ${ENGINE_LABELS[engine] || engine} (${i}/${n})…`
+    })
     if (!blob) return resetBtn()
     destroyAudioPlayer()
     await onAudioChanged()

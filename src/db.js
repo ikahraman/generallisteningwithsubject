@@ -109,6 +109,13 @@ function audioPath(materialId, kind) {
   return kind ? `/api/audio/${materialId}/${encodeURIComponent(kind)}` : `/api/audio/${materialId}`
 }
 
+// Metadata only (kind/engine/createdAt per track) — no binary download —
+// so callers can see which tracks exist (e.g. build a switcher) without
+// fetching every track's full audio.
+export function getAudioTracks(materialId) {
+  return request('GET', `/api/audio-meta/${materialId}`)
+}
+
 export async function saveAudioBlob(materialId, blob, engine, kind) {
   const buf = await blob.arrayBuffer()
   const qs = engine ? `?engine=${encodeURIComponent(engine)}` : ''

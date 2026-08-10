@@ -85,6 +85,33 @@ export async function generateAndCacheAudio(materialId, paragraphs, apiKey, voic
   return blob
 }
 
+// Generates Cloud AND Edge TTS independently for the same material — Edge
+// always runs even if Cloud fails (and vice versa), so a Cloud quota outage
+// mid-study already has a ready Edge track cached instead of blocking on
+// regeneration. Falls back to Gemini TTS only if BOTH fail. Each engine's
+// audio is stored under its own kind ('cloud' / 'edge' / 'gemini') so
+// Workspace can offer them as switchable tracks rather than one replacing
+// the other. Returns which engines actually produced audio.
+export async function generateBothEngines(materialId, paragraphs, apiKey, voices = DEFAULT_VOICES, onProgress) {
+  const results = { cloud: false, edge: false }
+  for (const engine of ['cloud', 'edge']) {
+    try {
+      const blob = await synthesizeParagraphs(engine, paragraphs, apiKey, voices, onProgress)
+      await saveAudioBlob(materialId, blob, engine, engine)
+      results[engine] = true
+    } catch {
+      // Independent per engine — a Cloud failure must not skip Edge, and
+      // vice versa (unlike generateAndCacheAudio's single-track fallback).
+    }
+  }
+  if (!results.cloud && !results.edge) {
+    const blob = await synthesizeParagraphs('gemini', paragraphs, apiKey, voices, onProgress)
+    await saveAudioBlob(materialId, blob, 'gemini', 'gemini')
+    results.gemini = true
+  }
+  return results
+}
+
 // Generates with exactly one engine — no Gemini fallback. Used when the
 // user explicitly picks an engine (rather than trusting the Settings
 // default), so a failure surfaces as a real, actionable error instead of

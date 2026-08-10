@@ -120,10 +120,13 @@ export function deleteMaterial(id) {
     const lib = await readLibrary()
     lib.materials = lib.materials.filter((m) => m.id !== id)
     lib.studyLog = lib.studyLog.filter((s) => s.materialId !== id)
+    // Read the tracks *before* clearing audioMeta — a material can now have
+    // several (main cloud/edge/gemini + vocab-lesson), and hardcoding kind
+    // names here previously left cloud/edge files orphaned on disk forever.
+    const ownTracks = lib.audioMeta.filter((a) => a.materialId === id)
     lib.audioMeta = lib.audioMeta.filter((a) => a.materialId !== id)
     await writeLibrary(lib)
-    await fs.rm(audioPath(id), { force: true })
-    await fs.rm(audioPath(id, 'vocab-lesson'), { force: true })
+    await Promise.all(ownTracks.map((t) => fs.rm(audioPath(id, t.kind), { force: true })))
   })
 }
 
@@ -233,6 +236,14 @@ export async function getAudioBlob(materialId, kind) {
   const lib = await readLibrary()
   const meta = lib.audioMeta.find((a) => matchesAudioMeta(a, materialId, kind))
   return { materialId, buffer, engine: meta?.engine || null, createdAt: meta?.createdAt || null }
+}
+
+// Metadata only (no binary read) — lets a caller see which tracks exist
+// for a material (e.g. 'cloud' and 'edge' both cached) without downloading
+// every track's full audio just to build a switcher UI.
+export async function getAudioTracks(materialId) {
+  const lib = await readLibrary()
+  return lib.audioMeta.filter((a) => a.materialId === materialId)
 }
 
 export function deleteAudioBlob(materialId, kind) {
