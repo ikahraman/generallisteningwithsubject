@@ -145,6 +145,20 @@ export class MaterialPlayer extends EventTarget {
     if (this.mode === 'audio') this.audio.playbackRate = rate
   }
 
+  // Switches an in-progress 'browser'-mode player over to real cached audio
+  // once it finishes downloading in the background — same instance (not a
+  // new object), so listeners already wired via wireAudioPlayer keep
+  // working without needing to be re-attached.
+  upgradeToBlob(blob) {
+    if (this.mode === 'audio') return
+    speechSynthesis.cancel()
+    this._stopRequested = true
+    this.mode = 'audio'
+    this.audioBlobRef = blob
+    this._initAudio(blob)
+    this.dispatchEvent(new CustomEvent('playstate', { detail: { playing: false } }))
+  }
+
   destroy() {
     if (this.mode === 'audio') {
       this.audio.pause()

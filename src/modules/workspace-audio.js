@@ -23,24 +23,26 @@ const TRACK_PRIORITY = ['cloud', 'edge', 'gemini', null]
 
 let player = null
 // Remembers a manual track switch for the current workspace visit (reset
-// per material) — loadAudioState honors it instead of always resetting to
+// per material) — loadAudioTracks honors it instead of always resetting to
 // TRACK_PRIORITY's default, so switching tracks doesn't get undone by the
 // full re-render that switching (and generating) already triggers.
 let trackOverride = null
 
-// Fetches only track *metadata* (cheap) to decide which one to actually
-// play, then downloads just that one track's audio — not every track that
-// happens to be cached.
-export async function loadAudioState(materialId) {
+// Metadata only (kind/engine per track, no binary) — fast, and deliberately
+// does NOT download any track's actual audio. A cached track can be many
+// MB; awaiting it here would block the whole Workspace page (transcript,
+// tabs, everything) behind a slow download before any of it could render.
+// The real blob is fetched separately, in the background, by
+// setupAudioPlayer — see that function for why.
+export async function loadAudioTracks(materialId) {
   const tracks = await getAudioTracks(materialId)
-  if (!tracks.length) return { tracks: [], current: null }
+  if (!tracks.length) return { tracks: [], defaultKind: undefined }
   const override = trackOverride?.materialId === materialId ? trackOverride.kind : undefined
   const defaultKind =
     override !== undefined && tracks.some((t) => (t.kind || null) === override)
       ? override
       : TRACK_PRIORITY.find((kind) => tracks.some((t) => (t.kind || null) === kind))
-  const row = await getAudioBlob(materialId, defaultKind || undefined)
-  return { tracks, current: row ? { ...row, kind: defaultKind } : null }
+  return { tracks, defaultKind }
 }
 
 // Plain browser-voice playback — the last-resort fallback when neither Edge
@@ -158,21 +160,24 @@ function playQuickPcm(pcmBytes, sampleRate, rate) {
 // has no cached audio yet — e.g. generation failed at creation time (quota,
 // "high demand", etc.) and silently fell back to browser TTS. Browser TTS
 // still plays below so the material is usable immediately either way.
-// `audioState` is the result of loadAudioState() — when it has more than
-// one track (Cloud + Edge both cached), a switcher lets the user pick
-// which one plays without regenerating anything.
-export function renderAudioSection(audioState, defaultSpeed = 1) {
-  const { tracks = [], current } = audioState || {}
-  if (current?.blob) {
-    const label = ENGINE_LABELS[current.engine] || current.engine || 'unknown source'
-    const others = tracks.filter((t) => (t.kind || null) !== (current.kind || null))
+// `audioTracks` is loadAudioTracks()'s result — metadata only, so this
+// renders a "loading" badge even when a track exists; setupAudioPlayer
+// swaps it for the real label once the audio itself has actually
+// downloaded. When more than one track is cached (Cloud + Edge), a
+// switcher lets the user pick which one plays without regenerating.
+export function renderAudioSection(audioTracks, defaultSpeed = 1) {
+  const { tracks = [], defaultKind } = audioTracks || {}
+  if (defaultKind !== undefined) {
+    const current = tracks.find((t) => (t.kind || null) === (defaultKind || null))
+    const label = ENGINE_LABELS[current?.engine] || current?.engine || 'unknown source'
+    const others = tracks.filter((t) => (t.kind || null) !== (defaultKind || null))
     return `
       <div class="audio-source-row">
-        <span class="badge">🔊 ${label}</span>
+        <span class="badge" id="ws-audio-badge">⏳ Loading ${label}…</span>
         ${
           others.length
             ? `<select id="ws-track-select" title="Switch audio track">
-                <option value="${current.kind ?? ''}">${label} (current)</option>
+                <option value="${defaultKind ?? ''}">${label}</option>
                 ${others.map((t) => `<option value="${t.kind ?? ''}">${ENGINE_LABELS[t.engine] || t.engine}</option>`).join('')}
               </select>`
             : ''
@@ -199,10 +204,10 @@ export function destroyAudioPlayer() {
  * @param {HTMLElement} root
  * @param {object} material
  * @param {Array} sentences
- * @param {{tracks: Array, current: object|null}} audioState from loadAudioState() — passed in rather than re-fetched, since the caller already loaded it to render renderAudioSection().
+ * @param {{tracks: Array, defaultKind: string|null|undefined}} audioTracks from loadAudioTracks() — metadata only, passed in rather than re-fetched since the caller already loaded it to render renderAudioSection().
  * @param {() => Promise<void>} onAudioChanged called after audio is generated/switched so the caller can re-render
  */
-export async function setupAudioPlayer(root, material, sentences, audioState, onAudioChanged) {
+export async function setupAudioPlayer(root, material, sentences, audioTracks, onAudioChanged) {
   root.querySelector('#ws-generate-speech')?.addEventListener('click', () => generateSpeechInPlace(root, material, onAudioChanged))
   root.querySelector('#ws-track-select')?.addEventListener('change', (e) => {
     trackOverride = { materialId: material.id, kind: e.target.value || null }
@@ -213,18 +218,15 @@ export async function setupAudioPlayer(root, material, sentences, audioState, on
   const defaultVoice = await getSetting('defaultVoice', '')
   const defaultSpeed = await getSetting('defaultSpeed', 1)
 
-  player = new MaterialPlayer({
-    sentences,
-    audioBlob: audioState?.current?.blob,
-    voiceURI: defaultVoice,
-    rate: defaultSpeed,
-  })
-
+  // Attach in browser-voice mode immediately (no blob) so Transcript/tabs
+  // are usable right away — a cached track can be several MB and take a
+  // long time on a slow connection, and must never block the rest of the
+  // page on that download (see loadAudioTracks).
+  player = new MaterialPlayer({ sentences, audioBlob: undefined, voiceURI: defaultVoice, rate: defaultSpeed })
   wireAudioPlayer(root, player, {
     onDownload: (blob) => downloadBlob(blob, `${slugify(material.title)}.wav`),
     onGenerateAndDownload: () => generateAudioOnDemand(root, material, onAudioChanged),
   })
-
   player.addEventListener('sentencechange', (e) => highlightSentence(root, e.detail.index))
 
   root.querySelectorAll('[data-sentence-index]').forEach((el) => {
@@ -233,6 +235,34 @@ export async function setupAudioPlayer(root, material, sentences, audioState, on
       player.play()
     })
   })
+
+  if (audioTracks?.defaultKind !== undefined) {
+    loadTrackInBackground(root, material, audioTracks.defaultKind)
+  }
+}
+
+// Downloads the actual cached track's audio after the page is already
+// interactive, and upgrades the live player in place once it arrives —
+// same player instance, so the click listeners wired above (which capture
+// `player` by reference to the module-level `let`) keep working, and so do
+// wireAudioPlayer's own closures (which capture the object, not a mode
+// snapshot). Only the download button's mode-dependent behavior is set up
+// once at wire time, so that one needs a manual refresh here.
+async function loadTrackInBackground(root, material, kind) {
+  const row = await getAudioBlob(material.id, kind || undefined)
+  if (!row?.blob || !player) return
+  player.upgradeToBlob(row.blob)
+
+  const badge = root.querySelector('#ws-audio-badge')
+  if (badge) badge.textContent = `🔊 ${ENGINE_LABELS[row.engine] || row.engine}`
+
+  const downloadBtn = root.querySelector('#ap-download')
+  if (downloadBtn) {
+    downloadBtn.disabled = false
+    downloadBtn.title = ''
+    downloadBtn.textContent = '⬇'
+    downloadBtn.onclick = () => downloadBlob(row.blob, `${slugify(material.title)}.wav`)
+  }
 }
 
 export async function requireApiKey() {
@@ -248,9 +278,11 @@ export async function requireApiKey() {
 }
 
 // Generates both Cloud and Edge TTS (Gemini as a last-resort safety net if
-// both fail — see generateBothEngines), then resolves to whichever track
-// loadAudioState now picks as the default so callers get a blob back
-// immediately (e.g. to download) without a second round trip. Returns null
+// both fail — see generateBothEngines), then downloads whichever track is
+// now the default so callers get a blob back immediately (e.g. to
+// download). Fetching the blob here is fine — the user just explicitly
+// asked to generate, so a short wait is expected, unlike the page-load
+// path in setupAudioPlayer which must never block on it. Returns null
 // (after showing the "no key" modal) instead of throwing when the key is
 // missing, so callers only handle the real-failure case.
 async function ensureAudioGenerated(material, onProgress) {
@@ -258,8 +290,10 @@ async function ensureAudioGenerated(material, onProgress) {
   if (!apiKey) return null
   await generateBothEngines(material.id, material.paragraphs, apiKey, DEFAULT_VOICES, onProgress)
   trackOverride = null
-  const state = await loadAudioState(material.id)
-  return state.current?.blob || null
+  const { defaultKind } = await loadAudioTracks(material.id)
+  if (defaultKind === undefined) return null
+  const row = await getAudioBlob(material.id, defaultKind || undefined)
+  return row?.blob || null
 }
 
 export function showAudioErrorModal(err) {
