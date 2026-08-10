@@ -57,7 +57,7 @@ Return ONLY a valid JSON object with this exact structure:
     "groupC": [...]${earTrainingSchema}
   },
   "shadowing": [
-    { "id": "sh1", "text": "a single medium-length sentence taken verbatim from the transcript", "paragraphRef": 0 }
+    { "id": "sh1", "text": "a single medium-length sentence taken verbatim from the transcript", "pronunciation": "IPA or simplified phonetic transcription of that whole sentence", "paragraphRef": 0 }
   ]
 }
 

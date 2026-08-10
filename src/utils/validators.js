@@ -85,12 +85,20 @@ function validateVocabulary(vocabulary) {
 
 // Each item is one verbatim sentence from the transcript for shadowing
 // practice (listen, then repeat aloud) — a flat list, not chunk/type-tagged.
+// `pronunciation` (whole-sentence phonetic transcription) mirrors the same
+// field on vocabulary examples — same diagnostic-not-fatal handling if
+// Gemini omits it.
 function validateShadowing(shadowing) {
-  return toArray(shadowing).map((it, i) => ({
+  const items = toArray(shadowing).map((it, i) => ({
     id: it?.id || `sh-${i + 1}`,
     text: String(it?.text || it?.chunk || ''),
+    pronunciation: String(it?.pronunciation || ''),
     paragraphRef: numberOr(it?.paragraphRef),
   }))
+  if (items.length && items.every((it) => !it.pronunciation)) {
+    console.warn('Shadowing: no item carried a "pronunciation" value — Gemini likely omitted that part of the schema.')
+  }
+  return items
 }
 
 function normalizeParagraph(p) {

@@ -28,7 +28,7 @@ export function renderShadowingPanel(material) {
             (item, i) => `
             <div class="sh-card">
               <span class="sh-index">${i + 1}</span>
-              <p class="sh-text">${escapeHtml(item.text)}</p>
+              <p class="sh-text">${escapeHtml(item.text)}${item.pronunciation ? ` <span class="text-muted">/${escapeHtml(item.pronunciation)}/</span>` : ''}</p>
               <button class="btn ghost sh-speak" data-text="${escapeAttr(item.text)}">🔊 Listen</button>
             </div>`
           )
