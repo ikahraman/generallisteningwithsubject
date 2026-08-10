@@ -6,6 +6,11 @@ Edge TTS, **Microsoft'un Edge tarayıcısındaki "Sesli Oku" özelliğinin arkas
 
 Bu projede Edge TTS, **Google Cloud TTS'e ücretsiz, kotasız bir alternatif/yedek** olarak kullanılıyor — Cloud TTS'in Google hesabı, faturalandırma ve günlük kota gereksinimleri var; Edge TTS'in hiçbiri yok.
 
+**İlgili bağlantılar:**
+- Kullanılan kütüphane — [edge-tts-universal (npm)](https://www.npmjs.com/package/edge-tts-universal) · [GitHub deposu](https://github.com/travisvn/edge-tts-universal) (`server/package.json`'daki bağımlılık, sürüm `^1.4.0`)
+- [Microsoft Edge — "Sesli Oku" (Read Aloud) özelliği](https://support.microsoft.com/en-us/microsoft-edge/hear-text-read-out-loud-with-read-aloud-in-microsoft-edge-1de81b8b-b217-05c5-183c-2c1591f976fa) — bu servisin resmi, kullanıcıya açık yüzü
+- [Azure AI Speech (Text to Speech)](https://azure.microsoft.com/en-us/products/ai-services/ai-speech) — Microsoft'un aynı nöral seslere **resmi, ücretli/faturalı** API erişimi sunan kurumsal ürünü; Edge TTS'in "resmi ve garanti edilen" karşılığı budur
+
 ## Neden Ayrı Bir Node.js Sunucusu Gerekiyor?
 
 Edge'in TTS backend'i (`speech.platform.bing.com`), bağlantıyı bir WebSocket üzerinden kurarken özel bir header istiyor. Tarayıcıların native `WebSocket` API'si, güvenlik nedeniyle bir web sayfasının bu header'ı elle ayarlamasına **izin vermiyor**. Yani bu proje saf bir tarayıcı uygulaması (PWA) olduğu için, Edge TTS'e **doğrudan** tarayıcıdan bağlanamıyor.
