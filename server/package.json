@@ -1,0 +1,15 @@
+{
+  "name": "academic-english-studio-edge-tts-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local companion server exposing Microsoft Edge's neural TTS (via edge-tts-universal) over plain HTTP. Exists only because Edge's TTS service requires a WebSocket header browsers won't let a webpage set — this runs in Node instead, where that restriction doesn't apply.",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "edge-tts-universal": "^1.4.0",
+    "express": "^4.19.2"
+  }
+}

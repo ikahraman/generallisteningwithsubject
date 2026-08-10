@@ -1,0 +1,151 @@
+// Local companion server for Microsoft Edge's neural TTS.
+//
+// Why this exists at all: Edge's TTS backend (speech.platform.bing.com)
+// requires a WebSocket header the browser WebSocket API refuses to let a
+// webpage set, so no purely client-side PWA can call it directly — only
+// Node/Deno/Bun-style environments can. This tiny server is that
+// environment; the browser app talks to it over plain HTTP on localhost.
+//
+// Unofficial/reverse-engineered API, not for commercial use — fine for a
+// personal study tool. Run with: npm start (inside this server/ folder).
+import express from 'express'
+import cors from 'cors'
+import { Communicate } from 'edge-tts-universal'
+import * as store from './store.js'
+
+const PORT = process.env.PORT || 5175
+
+const app = express()
+app.use(cors())
+app.use(express.json({ limit: '25mb' }))
+
+app.get('/health', (req, res) => res.json({ ok: true }))
+
+// ---------- library data API ----------
+// Backs src/db.js: the browser used to keep all of this in IndexedDB, but
+// that meant a phone and a desktop hitting the same app saw two different
+// libraries. This makes the server the single source of truth instead.
+
+const asyncRoute = (fn) => (req, res) => Promise.resolve(fn(req, res)).catch((err) => {
+  console.error('[api]', err)
+  res.status(500).json({ error: err.message || 'Internal error.' })
+})
+const idParam = (req) => Number(req.params.id)
+
+app.get('/api/materials', asyncRoute(async (req, res) => {
+  res.json(await store.getAllMaterials())
+}))
+app.post('/api/materials', asyncRoute(async (req, res) => {
+  res.json({ id: await store.addMaterial(req.body) })
+}))
+app.get('/api/materials/:id', asyncRoute(async (req, res) => {
+  const material = await store.getMaterial(idParam(req))
+  if (!material) return res.status(404).json({ error: 'Not found.' })
+  res.json(material)
+}))
+app.patch('/api/materials/:id', asyncRoute(async (req, res) => {
+  await store.updateMaterial(idParam(req), req.body)
+  res.json({ ok: true })
+}))
+app.delete('/api/materials/:id', asyncRoute(async (req, res) => {
+  await store.deleteMaterial(idParam(req))
+  res.json({ ok: true })
+}))
+app.post('/api/materials/:id/studied', asyncRoute(async (req, res) => {
+  await store.recordMaterialStudied(idParam(req))
+  res.json({ ok: true })
+}))
+app.patch('/api/materials/:id/favorite', asyncRoute(async (req, res) => {
+  await store.toggleFavorite(idParam(req), !!req.body.isFavorite)
+  res.json({ ok: true })
+}))
+
+app.get('/api/folders', asyncRoute(async (req, res) => res.json(await store.getAllFolders())))
+app.post('/api/folders', asyncRoute(async (req, res) => {
+  res.json({ id: await store.addFolder(req.body.name, req.body.parentId ?? null) })
+}))
+app.patch('/api/folders/:id', asyncRoute(async (req, res) => {
+  await store.renameFolder(idParam(req), req.body.name)
+  res.json({ ok: true })
+}))
+app.delete('/api/folders/:id', asyncRoute(async (req, res) => {
+  await store.deleteFolder(idParam(req))
+  res.json({ ok: true })
+}))
+
+app.get('/api/tags', asyncRoute(async (req, res) => res.json(await store.getAllTags())))
+app.post('/api/tags', asyncRoute(async (req, res) => {
+  res.json({ id: await store.addTag(req.body.name, req.body.color) })
+}))
+app.delete('/api/tags/:id', asyncRoute(async (req, res) => {
+  await store.deleteTag(idParam(req))
+  res.json({ ok: true })
+}))
+
+app.get('/api/audio/:materialId', asyncRoute(async (req, res) => {
+  const row = await store.getAudioBlob(Number(req.params.materialId))
+  if (!row) return res.status(404).json({ error: 'Not found.' })
+  res.setHeader('X-Audio-Engine', row.engine || '')
+  res.setHeader('X-Audio-Created-At', row.createdAt || '')
+  res.setHeader('Content-Type', 'application/octet-stream')
+  res.send(row.buffer)
+}))
+app.put('/api/audio/:materialId', express.raw({ type: '*/*', limit: '50mb' }), asyncRoute(async (req, res) => {
+  await store.saveAudioBlob(Number(req.params.materialId), req.body, req.query.engine || null)
+  res.json({ ok: true })
+}))
+app.delete('/api/audio/:materialId', asyncRoute(async (req, res) => {
+  await store.deleteAudioBlob(Number(req.params.materialId))
+  res.json({ ok: true })
+}))
+
+app.get('/api/settings', asyncRoute(async (req, res) => res.json(await store.getAllSettings())))
+app.put('/api/settings/:key', asyncRoute(async (req, res) => {
+  await store.setSetting(req.params.key, req.body.value)
+  res.json({ ok: true })
+}))
+
+app.get('/api/study-log', asyncRoute(async (req, res) => res.json(await store.getAllStudyLog())))
+app.get('/api/study-log/:materialId', asyncRoute(async (req, res) => {
+  res.json(await store.getStudyLogForMaterial(Number(req.params.materialId)))
+}))
+app.post('/api/study-log', asyncRoute(async (req, res) => {
+  res.json({ id: await store.addStudyLogEntry(req.body) })
+}))
+
+app.get('/api/export', asyncRoute(async (req, res) => res.json(await store.exportAllData())))
+app.post('/api/import', asyncRoute(async (req, res) => {
+  await store.importBulk(req.body)
+  res.json({ ok: true })
+}))
+app.post('/api/clear', asyncRoute(async (req, res) => {
+  await store.clearAllData()
+  res.json({ ok: true })
+}))
+
+app.post('/synthesize', async (req, res) => {
+  const { text, voice, rate } = req.body || {}
+  if (!text || !voice) {
+    return res.status(400).json({ error: 'Both "text" and "voice" are required.' })
+  }
+
+  try {
+    const communicate = new Communicate(text, { voice, rate: rate || '+0%' })
+    const chunks = []
+    for await (const chunk of communicate.stream()) {
+      if (chunk.type === 'audio' && chunk.data) chunks.push(chunk.data)
+    }
+    if (!chunks.length) throw new Error('Edge TTS returned no audio.')
+
+    const audio = Buffer.concat(chunks)
+    res.setHeader('Content-Type', 'audio/mpeg')
+    res.send(audio)
+  } catch (err) {
+    console.error('[edge-tts] synthesis failed:', err.message)
+    res.status(502).json({ error: err.message || 'Edge TTS synthesis failed.' })
+  }
+})
+
+app.listen(PORT, () => {
+  console.log(`Edge TTS server listening on http://localhost:${PORT}`)
+})

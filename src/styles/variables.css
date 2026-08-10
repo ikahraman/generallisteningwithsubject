@@ -1,0 +1,85 @@
+:root {
+  /* -- surfaces (dark, default) -- */
+  --bg-primary: #1c1c21;
+  --bg-secondary: #27272d;
+  --bg-tertiary: #323239;
+  --bg-elevated: #3a3a42;
+  --text-primary: #f0f0f5;
+  --text-secondary: #a8a8b8;
+  --text-muted: #7a7a88;
+  --border: rgba(255, 255, 255, 0.1);
+  --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+
+  /* -- accent (overridden by [data-accent]) -- */
+  --accent: #6366f1;
+  --accent-hover: #818cf8;
+
+  /* -- status -- */
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --error: #ef4444;
+
+  /* -- radius -- */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  /* -- typography -- */
+  --font-sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --font-size-base: 15px;
+  --line-height-base: 1.6;
+  --font-weight-heading: 600;
+
+  /* -- spacing (base unit 4px) -- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --card-padding: 24px;
+  --card-gap: 16px;
+  --page-padding: 32px;
+  --page-padding-mobile: 16px;
+  --sidebar-width: 240px;
+
+  /* -- motion -- */
+  --transition-fast: 120ms ease;
+  --transition-base: 200ms ease;
+}
+
+body.light-theme {
+  --bg-primary: #fafafa;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f4f4f5;
+  --bg-elevated: #ffffff;
+  --text-primary: #18181b;
+  --text-secondary: #52525b;
+  --text-muted: #a1a1aa;
+  --border: rgba(0, 0, 0, 0.08);
+  --shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+}
+
+/* Accent color picker options (Settings module) */
+body[data-accent='indigo'] {
+  --accent: #6366f1;
+  --accent-hover: #818cf8;
+}
+body[data-accent='rose'] {
+  --accent: #f43f5e;
+  --accent-hover: #fb7185;
+}
+body[data-accent='emerald'] {
+  --accent: #10b981;
+  --accent-hover: #34d399;
+}
+body[data-accent='amber'] {
+  --accent: #f59e0b;
+  --accent-hover: #fbbf24;
+}
+body[data-accent='sky'] {
+  --accent: #0ea5e9;
+  --accent-hover: #38bdf8;
+}
