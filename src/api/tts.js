@@ -65,7 +65,7 @@ async function synthesizeParagraphs(engine, paragraphs, apiKey, voices, onProgre
 // so generation doesn't hard-fail on a transient outage. The engine that
 // actually succeeded is tagged onto the cached blob so Workspace can show
 // "generated with Cloud/Edge/Gemini TTS" and offer to upgrade it later.
-export async function generateAndCacheAudio(materialId, paragraphs, apiKey, voices = DEFAULT_VOICES, onProgress) {
+export async function generateAndCacheAudio(materialId, paragraphs, apiKey, voices = DEFAULT_VOICES, onProgress, kind) {
   const order = [voices.preferredEngine || 'cloud', 'gemini']
   let blob
   let usedEngine
@@ -81,7 +81,7 @@ export async function generateAndCacheAudio(materialId, paragraphs, apiKey, voic
   }
   if (!blob) throw lastErr
 
-  await saveAudioBlob(materialId, blob, usedEngine)
+  await saveAudioBlob(materialId, blob, usedEngine, kind)
   return blob
 }
 
@@ -89,8 +89,8 @@ export async function generateAndCacheAudio(materialId, paragraphs, apiKey, voic
 // user explicitly picks an engine (rather than trusting the Settings
 // default), so a failure surfaces as a real, actionable error instead of
 // silently being replaced by whatever the fallback produced.
-export async function generateAndCacheAudioWithEngine(materialId, paragraphs, apiKey, voices, engine, onProgress) {
+export async function generateAndCacheAudioWithEngine(materialId, paragraphs, apiKey, voices, engine, onProgress, kind) {
   const blob = await synthesizeParagraphs(engine, paragraphs, apiKey, voices, onProgress)
-  await saveAudioBlob(materialId, blob, engine)
+  await saveAudioBlob(materialId, blob, engine, kind)
   return blob
 }

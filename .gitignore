@@ -17,6 +17,10 @@ server/data
 
 # VDS credentials / infra notes — never publish (public repo)
 veridyen_bilgileri_VDS.txt
+kepassfor_site.txt
+*pass*.txt
+*secret*
+*credential*
 
 # Editor directories and files
 .vscode/*

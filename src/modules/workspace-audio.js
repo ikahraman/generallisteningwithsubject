@@ -14,7 +14,7 @@ import { openModal } from '../components/modal.js'
 import { showToast } from '../components/toast.js'
 import { downloadBlob, slugify, pickBestVoice } from '../utils/helpers.js'
 
-const ENGINE_LABELS = { cloud: 'Google Cloud TTS', edge: 'Edge TTS', gemini: 'Gemini TTS' }
+export const ENGINE_LABELS = { cloud: 'Google Cloud TTS', edge: 'Edge TTS', gemini: 'Gemini TTS' }
 
 let player = null
 
@@ -204,7 +204,7 @@ export async function setupAudioPlayer(root, material, sentences, onAudioChanged
   })
 }
 
-async function requireApiKey() {
+export async function requireApiKey() {
   const apiKey = await getSetting('geminiApiKey', '')
   if (!apiKey) {
     openModal({
@@ -236,7 +236,7 @@ async function ensureAudioGeneratedWithEngine(material, engine) {
   return generateAndCacheAudioWithEngine(material.id, material.paragraphs, apiKey, DEFAULT_VOICES, engine)
 }
 
-function showAudioErrorModal(err) {
+export function showAudioErrorModal(err) {
   openModal({
     title: 'Audio Generation Failed',
     bodyHTML: `<p>${escapeHtml(err.message || 'Something went wrong. Please try again.')}</p>`,

@@ -82,20 +82,22 @@ app.delete('/api/tags/:id', asyncRoute(async (req, res) => {
   res.json({ ok: true })
 }))
 
-app.get('/api/audio/:materialId', asyncRoute(async (req, res) => {
-  const row = await store.getAudioBlob(Number(req.params.materialId))
+// :kind distinguishes a material's main listening-passage audio (omitted)
+// from other narrations for the same material, e.g. 'vocab-lesson'.
+app.get('/api/audio/:materialId/:kind?', asyncRoute(async (req, res) => {
+  const row = await store.getAudioBlob(Number(req.params.materialId), req.params.kind)
   if (!row) return res.status(404).json({ error: 'Not found.' })
   res.setHeader('X-Audio-Engine', row.engine || '')
   res.setHeader('X-Audio-Created-At', row.createdAt || '')
   res.setHeader('Content-Type', 'application/octet-stream')
   res.send(row.buffer)
 }))
-app.put('/api/audio/:materialId', express.raw({ type: '*/*', limit: '50mb' }), asyncRoute(async (req, res) => {
-  await store.saveAudioBlob(Number(req.params.materialId), req.body, req.query.engine || null)
+app.put('/api/audio/:materialId/:kind?', express.raw({ type: '*/*', limit: '50mb' }), asyncRoute(async (req, res) => {
+  await store.saveAudioBlob(Number(req.params.materialId), req.body, req.query.engine || null, req.params.kind)
   res.json({ ok: true })
 }))
-app.delete('/api/audio/:materialId', asyncRoute(async (req, res) => {
-  await store.deleteAudioBlob(Number(req.params.materialId))
+app.delete('/api/audio/:materialId/:kind?', asyncRoute(async (req, res) => {
+  await store.deleteAudioBlob(Number(req.params.materialId), req.params.kind)
   res.json({ ok: true })
 }))
 

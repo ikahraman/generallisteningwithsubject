@@ -3,10 +3,15 @@
 // one button, like a teacher walking through the list, instead of the
 // silent word-by-word reference view in the Vocabulary tab. Split out of
 // workspace-vocab.js to stay under the 400-line-per-file rule.
-import { speakStudyText, stopStudyAudio, synthesizeStudyAudioBlob } from './workspace-audio.js'
+import { speakStudyText, stopStudyAudio, synthesizeStudyAudioBlob, requireApiKey, showAudioErrorModal, ENGINE_LABELS } from './workspace-audio.js'
 import { getEtSpeed, setEtSpeed, SPEECH_RATE_OPTIONS } from '../utils/ear-training-utils.js'
 import { downloadBlob, slugify } from '../utils/helpers.js'
 import { openModal } from '../components/modal.js'
+import { getAudioBlob, getSetting } from '../db.js'
+import { generateAndCacheAudio, DEFAULT_VOICES } from '../api/tts.js'
+
+const AUDIO_KIND = 'vocab-lesson'
+let lessonAudio = null
 
 // Turkish meaning is deliberately left out of the spoken text — an
 // English voice reading a Turkish word aloud comes out mispronounced and
@@ -35,6 +40,7 @@ export function renderVocabLessonPanel(material) {
 
   return `
     <div class="vocab-lesson">
+      <div id="vl-audio-status"></div>
       <div class="vocab-lesson-controls">
         <button class="btn primary" id="vl-play-all">▶ Play Full Lesson</button>
         <button class="btn ghost" id="vl-stop">⏹ Stop</button>
@@ -76,14 +82,100 @@ export function wireVocabLessonPanel(root, material) {
   const segments = (material.vocabulary || []).map(buildSegment)
   const fullText = segments.map((s) => s.speechText).join(' ... ')
 
-  root.querySelector('#vl-play-all')?.addEventListener('click', () => speakStudyText(fullText, getEtSpeed()))
-  root.querySelector('#vl-stop')?.addEventListener('click', () => stopStudyAudio())
+  root.querySelector('#vl-play-all')?.addEventListener('click', () => playFullLesson(material.id, fullText))
+  root.querySelector('#vl-stop')?.addEventListener('click', () => stopLesson())
   root.querySelector('#vl-speed')?.addEventListener('change', (e) => setEtSpeed(Number(e.target.value)))
   root.querySelectorAll('.vl-speak').forEach((btn) => {
     btn.addEventListener('click', () => speakStudyText(btn.dataset.text, getEtSpeed()))
   })
 
   root.querySelector('#vl-download')?.addEventListener('click', () => downloadLessonMp3(root, material, fullText))
+
+  refreshAudioStatus(root, material, segments)
+}
+
+// Plays the cached, previously-generated lesson narration (reliable, no
+// live TTS call) if one exists; otherwise falls back to the same live Edge
+// TTS / browser-voice path as the individual word buttons, so playback
+// always works even before anyone hits "Generate Speech".
+async function playFullLesson(materialId, fullText) {
+  stopLesson()
+  const cached = await getAudioBlob(materialId, AUDIO_KIND)
+  if (cached?.blob) {
+    const url = URL.createObjectURL(cached.blob)
+    lessonAudio = new Audio(url)
+    lessonAudio.playbackRate = getEtSpeed()
+    lessonAudio.addEventListener('ended', () => URL.revokeObjectURL(url))
+    lessonAudio.play().catch(() => {})
+    return
+  }
+  speakStudyText(fullText, getEtSpeed())
+}
+
+function stopLesson() {
+  lessonAudio?.pause()
+  lessonAudio = null
+  stopStudyAudio()
+}
+
+async function refreshAudioStatus(root, material, segments) {
+  const container = root.querySelector('#vl-audio-status')
+  if (!container) return
+  const [cached, defaultEngine] = await Promise.all([
+    getAudioBlob(material.id, AUDIO_KIND),
+    getSetting('defaultTtsEngine', 'cloud'),
+  ])
+  container.innerHTML = renderAudioStatus(cached, defaultEngine)
+  container.querySelector('#vl-generate')?.addEventListener('click', () => generateLessonAudio(root, material, segments))
+}
+
+function renderAudioStatus(cached, defaultEngine) {
+  if (cached?.blob) {
+    const label = ENGINE_LABELS[cached.engine] || cached.engine || 'unknown source'
+    return `
+      <div class="audio-source-row">
+        <span class="badge">🔊 ${label}</span>
+        <button class="btn ghost" id="vl-generate">↻ Regenerate</button>
+      </div>
+    `
+  }
+  return `
+    <div class="banner warning" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+      <span>No generated lesson audio yet — the word buttons and "Play Full Lesson" still work via live playback, but generating caches it for fast, reliable, cross-device replay.</span>
+      <div style="display:flex; gap:8px; align-items:center; flex-shrink:0;">
+        <select id="vl-engine-select" title="Engine to generate with">
+          <option value="cloud" ${defaultEngine === 'cloud' ? 'selected' : ''}>Google Cloud TTS</option>
+          <option value="edge" ${defaultEngine === 'edge' ? 'selected' : ''}>Edge TTS</option>
+        </select>
+        <button class="btn primary" id="vl-generate">🔊 Generate Speech</button>
+      </div>
+    </div>
+  `
+}
+
+async function generateLessonAudio(root, material, segments) {
+  const btn = root.querySelector('#vl-generate')
+  const engine = root.querySelector('#vl-engine-select')?.value || (await getSetting('defaultTtsEngine', 'cloud'))
+  const resetBtn = () => {
+    if (btn) {
+      btn.disabled = false
+      btn.textContent = '🔊 Generate Speech'
+    }
+  }
+  if (btn) {
+    btn.disabled = true
+    btn.innerHTML = '<span class="spinner"></span> Generating…'
+  }
+  try {
+    const apiKey = await requireApiKey()
+    if (!apiKey) return resetBtn()
+    const paragraphs = segments.map((s) => ({ text: s.speechText }))
+    await generateAndCacheAudio(material.id, paragraphs, apiKey, { ...DEFAULT_VOICES, preferredEngine: engine }, null, AUDIO_KIND)
+    await refreshAudioStatus(root, material, segments)
+  } catch (err) {
+    resetBtn()
+    showAudioErrorModal(err)
+  }
 }
 
 async function downloadLessonMp3(root, material, fullText) {

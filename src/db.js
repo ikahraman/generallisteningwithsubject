@@ -99,10 +99,18 @@ export function deleteTag(id) {
 
 // ---------- audio cache ----------
 
-export async function saveAudioBlob(materialId, blob, engine) {
+// `kind` picks which narration slot to use for a material — omit for the
+// main listening-passage audio, or e.g. 'vocab-lesson' for the Vocab
+// Lesson's spoken word-list (different text, stored separately so the two
+// don't overwrite each other).
+function audioPath(materialId, kind) {
+  return kind ? `/api/audio/${materialId}/${encodeURIComponent(kind)}` : `/api/audio/${materialId}`
+}
+
+export async function saveAudioBlob(materialId, blob, engine, kind) {
   const buf = await blob.arrayBuffer()
   const qs = engine ? `?engine=${encodeURIComponent(engine)}` : ''
-  const res = await fetch(`${SERVER_URL}/api/audio/${materialId}${qs}`, {
+  const res = await fetch(`${SERVER_URL}${audioPath(materialId, kind)}${qs}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/octet-stream' },
     body: buf,
@@ -110,10 +118,10 @@ export async function saveAudioBlob(materialId, blob, engine) {
   if (!res.ok) throw new Error(await extractError(res))
 }
 
-export async function getAudioBlob(materialId) {
+export async function getAudioBlob(materialId, kind) {
   let res
   try {
-    res = await fetch(`${SERVER_URL}/api/audio/${materialId}`)
+    res = await fetch(`${SERVER_URL}${audioPath(materialId, kind)}`)
   } catch {
     throw new Error('Library server is not reachable — is it running? (npm start inside server/)')
   }
@@ -128,8 +136,8 @@ export async function getAudioBlob(materialId) {
   }
 }
 
-export function deleteAudioBlob(materialId) {
-  return request('DELETE', `/api/audio/${materialId}`)
+export function deleteAudioBlob(materialId, kind) {
+  return request('DELETE', audioPath(materialId, kind))
 }
 
 // ---------- settings (key/value) ----------

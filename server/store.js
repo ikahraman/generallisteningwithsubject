@@ -61,7 +61,14 @@ function bumpSeqPastExisting(lib, collection, rows) {
   lib.seq[collection] = Math.max(lib.seq[collection] || 0, maxId)
 }
 
-const audioPath = (materialId) => path.join(AUDIO_DIR, `${materialId}.bin`)
+// `kind` distinguishes a material's main listening-passage audio (kind
+// omitted, unchanged filename/meta shape for backward compatibility) from
+// other narrations belonging to the same material — currently just the
+// Vocab Lesson's spoken word-list, which is different text entirely and
+// would otherwise overwrite the main audio if it used the same slot.
+const audioPath = (materialId, kind) =>
+  path.join(AUDIO_DIR, kind ? `${materialId}-${kind}.bin` : `${materialId}.bin`)
+const matchesAudioMeta = (a, materialId, kind) => a.materialId === materialId && (a.kind || null) === (kind || null)
 
 // ---------- materials ----------
 
@@ -116,6 +123,7 @@ export function deleteMaterial(id) {
     lib.audioMeta = lib.audioMeta.filter((a) => a.materialId !== id)
     await writeLibrary(lib)
     await fs.rm(audioPath(id), { force: true })
+    await fs.rm(audioPath(id, 'vocab-lesson'), { force: true })
   })
 }
 
@@ -201,38 +209,38 @@ export function deleteTag(id) {
 
 // ---------- audio cache ----------
 
-export function saveAudioBlob(materialId, buffer, engine) {
+export function saveAudioBlob(materialId, buffer, engine, kind) {
   return serialize(async () => {
     await ensureDirs()
-    await fs.writeFile(audioPath(materialId), buffer)
+    await fs.writeFile(audioPath(materialId, kind), buffer)
     const lib = await readLibrary()
-    const meta = { materialId, engine: engine || null, createdAt: new Date().toISOString() }
-    const idx = lib.audioMeta.findIndex((a) => a.materialId === materialId)
+    const meta = { materialId, kind: kind || null, engine: engine || null, createdAt: new Date().toISOString() }
+    const idx = lib.audioMeta.findIndex((a) => matchesAudioMeta(a, materialId, kind))
     if (idx === -1) lib.audioMeta.push(meta)
     else lib.audioMeta[idx] = meta
     await writeLibrary(lib)
   })
 }
 
-export async function getAudioBlob(materialId) {
+export async function getAudioBlob(materialId, kind) {
   let buffer
   try {
-    buffer = await fs.readFile(audioPath(materialId))
+    buffer = await fs.readFile(audioPath(materialId, kind))
   } catch (err) {
     if (err.code === 'ENOENT') return null
     throw err
   }
   const lib = await readLibrary()
-  const meta = lib.audioMeta.find((a) => a.materialId === materialId)
+  const meta = lib.audioMeta.find((a) => matchesAudioMeta(a, materialId, kind))
   return { materialId, buffer, engine: meta?.engine || null, createdAt: meta?.createdAt || null }
 }
 
-export function deleteAudioBlob(materialId) {
+export function deleteAudioBlob(materialId, kind) {
   return serialize(async () => {
     const lib = await readLibrary()
-    lib.audioMeta = lib.audioMeta.filter((a) => a.materialId !== materialId)
+    lib.audioMeta = lib.audioMeta.filter((a) => !matchesAudioMeta(a, materialId, kind))
     await writeLibrary(lib)
-    await fs.rm(audioPath(materialId), { force: true })
+    await fs.rm(audioPath(materialId, kind), { force: true })
   })
 }
 
