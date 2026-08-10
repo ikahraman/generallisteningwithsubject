@@ -19,10 +19,13 @@ export const GEMINI_TTS_VOICES = [
 ]
 
 // A full material (transcript + questions + vocab + all 7 Ear Training
-// subtypes) is a lot of generation — 90s gives it real room — while TTS
-// below gets the same shorter budget as the other engines, since a hang
-// there blocks tts.js's engine-fallback chain just as badly as Edge's does.
-const TEXT_TIMEOUT_MS = 90000
+// subtypes, up to maxOutputTokens: 32768 below) is a lot of generation —
+// 90s turned out too tight in practice and was killing real, otherwise-
+// successful requests, especially at higher word/paragraph-count settings.
+// 3 minutes while TTS below keeps the same shorter budget as the other
+// engines, since a hang there blocks tts.js's engine-fallback chain just
+// as badly as Edge's does.
+const TEXT_TIMEOUT_MS = 180000
 const TTS_TIMEOUT_MS = 30000
 
 export async function generateMaterialJSON(apiKey, prompt) {
