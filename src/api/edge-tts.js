@@ -20,6 +20,15 @@ export const EDGE_TTS_VOICES = [
   'en-GB-SoniaNeural',
 ]
 
+// Edge's backend is an unofficial, reverse-engineered API with no SLA — it
+// can occasionally stall mid-request instead of erroring out. Without a
+// hard timeout that hangs the whole generation flow indefinitely (the
+// engine-fallback chain in tts.js never gets a chance to move on to Cloud/
+// Gemini, since it's still awaiting this call). 30s is generous for even a
+// long paragraph (~8s observed for ~90 words) but still fails fast enough
+// to fall back within a reasonable wait.
+const TIMEOUT_MS = 30000
+
 export async function synthesizeSpeech(text, voiceName = EDGE_TTS_VOICES[0], rate = '+0%') {
   let res
   try {
@@ -27,8 +36,10 @@ export async function synthesizeSpeech(text, voiceName = EDGE_TTS_VOICES[0], rat
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, voice: voiceName, rate }),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
     })
-  } catch {
+  } catch (err) {
+    if (err.name === 'TimeoutError') throw new Error(`Edge TTS timed out after ${TIMEOUT_MS / 1000}s (server may be stalled).`)
     throw new Error('Edge TTS server is not reachable — is it running? (npm start inside server/)')
   }
   if (!res.ok) throw new Error(await extractError(res))

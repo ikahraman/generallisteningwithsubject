@@ -141,6 +141,12 @@ app.post('/api/clear', asyncRoute(async (req, res) => {
   res.json({ ok: true })
 }))
 
+// Edge's backend is unofficial and can stall mid-stream instead of erroring
+// — without a hard cap, that hangs this request (and the client's own
+// timeout is a separate, later line of defense, not a substitute: a
+// stalled request here still pins a connection/CPU on the server side).
+const SYNTHESIZE_TIMEOUT_MS = 25000
+
 app.post('/synthesize', async (req, res) => {
   const { text, voice, rate } = req.body || {}
   if (!text || !voice) {
@@ -150,9 +156,15 @@ app.post('/synthesize', async (req, res) => {
   try {
     const communicate = new Communicate(text, { voice, rate: rate || '+0%' })
     const chunks = []
-    for await (const chunk of communicate.stream()) {
-      if (chunk.type === 'audio' && chunk.data) chunks.push(chunk.data)
-    }
+    const collect = (async () => {
+      for await (const chunk of communicate.stream()) {
+        if (chunk.type === 'audio' && chunk.data) chunks.push(chunk.data)
+      }
+    })()
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`Edge TTS stalled (no response after ${SYNTHESIZE_TIMEOUT_MS / 1000}s).`)), SYNTHESIZE_TIMEOUT_MS)
+    )
+    await Promise.race([collect, timeout])
     if (!chunks.length) throw new Error('Edge TTS returned no audio.')
 
     const audio = Buffer.concat(chunks)

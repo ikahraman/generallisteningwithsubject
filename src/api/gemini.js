@@ -18,21 +18,35 @@ export const GEMINI_TTS_VOICES = [
   'Callirrhoe',
 ]
 
+// A full material (transcript + questions + vocab + all 7 Ear Training
+// subtypes) is a lot of generation — 90s gives it real room — while TTS
+// below gets the same shorter budget as the other engines, since a hang
+// there blocks tts.js's engine-fallback chain just as badly as Edge's does.
+const TEXT_TIMEOUT_MS = 90000
+const TTS_TIMEOUT_MS = 30000
+
 export async function generateMaterialJSON(apiKey, prompt) {
-  const res = await fetch(`${API_BASE}/${TEXT_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      // maxOutputTokens set explicitly and generously: open-ended questions
-      // (full-sentence correctAnswer values, not short options) plus a full
-      // transcript/vocabulary/grammar payload, plus Ear Training's 7 subtypes
-      // (3 items per paragraph each) can add up to a lot of JSON — without
-      // this, some responses were getting cut off mid-object, producing
-      // "not valid JSON" errors from truncation, not bad output.
-      generationConfig: { responseMimeType: 'application/json', temperature: 0.9, maxOutputTokens: 32768 },
-    }),
-  })
+  let res
+  try {
+    res = await fetch(`${API_BASE}/${TEXT_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        // maxOutputTokens set explicitly and generously: open-ended questions
+        // (full-sentence correctAnswer values, not short options) plus a full
+        // transcript/vocabulary/grammar payload, plus Ear Training's 7 subtypes
+        // (3 items per paragraph each) can add up to a lot of JSON — without
+        // this, some responses were getting cut off mid-object, producing
+        // "not valid JSON" errors from truncation, not bad output.
+        generationConfig: { responseMimeType: 'application/json', temperature: 0.9, maxOutputTokens: 32768 },
+      }),
+      signal: AbortSignal.timeout(TEXT_TIMEOUT_MS),
+    })
+  } catch (err) {
+    if (err.name === 'TimeoutError') throw new Error(`Gemini timed out after ${TEXT_TIMEOUT_MS / 1000}s.`)
+    throw err
+  }
   if (!res.ok) throw new Error(await extractError(res))
   const data = await res.json()
   const candidate = data.candidates?.[0]
@@ -48,17 +62,24 @@ export async function generateMaterialJSON(apiKey, prompt) {
 }
 
 export async function generateSpeechPCM(apiKey, text, voiceName = 'Kore') {
-  const res = await fetch(`${API_BASE}/${TTS_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text }] }],
-      generationConfig: {
-        responseModalities: ['AUDIO'],
-        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
-      },
-    }),
-  })
+  let res
+  try {
+    res = await fetch(`${API_BASE}/${TTS_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text }] }],
+        generationConfig: {
+          responseModalities: ['AUDIO'],
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName } } },
+        },
+      }),
+      signal: AbortSignal.timeout(TTS_TIMEOUT_MS),
+    })
+  } catch (err) {
+    if (err.name === 'TimeoutError') throw new Error(`Gemini TTS timed out after ${TTS_TIMEOUT_MS / 1000}s.`)
+    throw err
+  }
   if (!res.ok) throw new Error(await extractError(res))
   const data = await res.json()
   const part = data.candidates?.[0]?.content?.parts?.find((p) => p.inlineData)

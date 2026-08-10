@@ -17,16 +17,28 @@ export const CLOUD_TTS_VOICES = [
   'en-US-Wavenet-D', // male
 ]
 
+// Google's own API, so far less likely to stall than Edge's unofficial one
+// — but a hard timeout still matters, since a hang here would block the
+// same fallback chain just as badly. See edge-tts.js for the fuller story.
+const TIMEOUT_MS = 30000
+
 export async function synthesizeSpeech(apiKey, text, voiceName = CLOUD_TTS_VOICES[0], speakingRate = 1) {
-  const res = await fetch(`${ENDPOINT}?key=${encodeURIComponent(apiKey)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      input: { text },
-      voice: { languageCode: 'en-US', name: voiceName },
-      audioConfig: { audioEncoding: 'LINEAR16', sampleRateHertz: SAMPLE_RATE, speakingRate },
-    }),
-  })
+  let res
+  try {
+    res = await fetch(`${ENDPOINT}?key=${encodeURIComponent(apiKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input: { text },
+        voice: { languageCode: 'en-US', name: voiceName },
+        audioConfig: { audioEncoding: 'LINEAR16', sampleRateHertz: SAMPLE_RATE, speakingRate },
+      }),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    })
+  } catch (err) {
+    if (err.name === 'TimeoutError') throw new Error(`Cloud TTS timed out after ${TIMEOUT_MS / 1000}s.`)
+    throw err
+  }
   if (!res.ok) throw new Error(await extractError(res))
 
   const { audioContent } = await res.json()
