@@ -4,7 +4,10 @@
 // HTTP wrapper around a Node process running edge-tts-universal instead.
 // If that server isn't running, fetch() fails fast (connection refused)
 // and the caller's engine-fallback chain moves on to the next tier.
-const SERVER_URL = 'http://localhost:5175'
+// Relative — same-origin in production (nginx proxies /synthesize to the
+// companion server), proxied to localhost:5175 by Vite in dev (see
+// vite.config.js).
+const SERVER_URL = ''
 const TARGET_SAMPLE_RATE = 24000 // match Cloud TTS / Gemini TTS so paragraphs concatenate cleanly
 
 export const EDGE_TTS_VOICES = [

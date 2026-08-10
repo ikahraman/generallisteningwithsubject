@@ -2,6 +2,15 @@ import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  server: {
+    // Client code calls relative /api and /synthesize paths (same pattern
+    // nginx uses in production to reverse-proxy them to the companion
+    // server) — this makes that work against `npm run dev` too.
+    proxy: {
+      '/api': 'http://localhost:5175',
+      '/synthesize': 'http://localhost:5175',
+    },
+  },
   plugins: [
     VitePWA({
       registerType: 'autoUpdate',

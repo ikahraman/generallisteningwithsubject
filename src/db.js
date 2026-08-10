@@ -2,7 +2,10 @@
 // be Dexie/IndexedDB, but that meant each browser/device had its own
 // separate copy of the library — moving it to the server means a phone and
 // a desktop hitting the same server see the same materials.
-const SERVER_URL = 'http://localhost:5175'
+// Relative — same-origin in production (nginx proxies /api to the
+// companion server), proxied to localhost:5175 by Vite in dev (see
+// vite.config.js).
+const SERVER_URL = ''
 
 async function request(method, path, body) {
   let res
