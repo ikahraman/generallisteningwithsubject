@@ -28,7 +28,12 @@ let formState = {
   mode: 'selective',
   wordCount: MODES.selective.defaultWords,
   paragraphCount: MODES.selective.defaultParagraphs,
+  // Which LLM actually produced the pasted response — free text (not a
+  // fixed list) since new models show up constantly. Kept across imports
+  // in the session since a batch is usually all done with the same model.
+  contentSource: '',
 }
+const SOURCE_SUGGESTIONS = ['Gemini', 'ChatGPT', 'Claude', 'Kimi', 'DeepSeek', 'Grok']
 let pastedResponse = ''
 let statusMessage = ''
 let statusIsError = false
@@ -130,6 +135,13 @@ export async function renderContentStudio(container) {
         <h2 class="card-title">Paste LLM Response</h2>
         <p class="card-hint" style="margin-bottom:10px;">Paste the raw JSON the LLM returned — markdown code fences are fine, they're stripped automatically.</p>
         <textarea id="cs-response" rows="12" placeholder='{ "title": "...", "transcript": "...", ... }' style="width:100%; font-family: ui-monospace, monospace; font-size:12.5px; line-height:1.5; resize:vertical;">${escapeHtml(pastedResponse)}</textarea>
+        <div class="field" style="margin-top:10px; margin-bottom:0;">
+          <label class="field-label" for="cs-source">Source (which LLM produced this)</label>
+          <input type="text" id="cs-source" list="cs-source-options" placeholder="e.g. Kimi K2, ChatGPT-5, Claude Opus, Gemini..." value="${escapeAttr(formState.contentSource)}" />
+          <datalist id="cs-source-options">
+            ${SOURCE_SUGGESTIONS.map((s) => `<option value="${escapeAttr(s)}">`).join('')}
+          </datalist>
+        </div>
         ${statusMessage ? `<div class="banner ${statusIsError ? 'error' : ''}" style="margin-top:10px;">${escapeHtml(statusMessage)}</div>` : ''}
         <button class="btn primary" id="cs-import" style="margin-top:10px;" ${isImporting ? 'disabled' : ''}>
           ${isImporting ? spinnerHTML() + 'Importing…' : '⬆ Validate & Import'}
@@ -218,6 +230,7 @@ function wireEvents(root) {
   })
 
   root.querySelector('#cs-response')?.addEventListener('input', (e) => (pastedResponse = e.target.value))
+  root.querySelector('#cs-source')?.addEventListener('input', (e) => (formState.contentSource = e.target.value))
 
   root.querySelector('#cs-import')?.addEventListener('click', () => handleImport(root))
 }
@@ -266,6 +279,7 @@ async function handleImport(root) {
       userAnswers: { groupA: {}, groupB: {}, groupC: {} },
       earTrainingAnswers: {},
       sourceFile: key,
+      contentSource: formState.contentSource.trim(),
     }
 
     const all = await getAllMaterials()

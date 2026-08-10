@@ -302,6 +302,7 @@ async function handleGenerate(root) {
       userAnswers: { groupA: {}, groupB: {}, groupC: {} },
       earTrainingAnswers: {},
       geminiAudioUrl: null,
+      contentSource: 'Gemini', // this flow always calls Gemini directly, unlike Content Studio's paste-any-LLM path
     }
 
     const id = await addMaterial(material)

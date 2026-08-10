@@ -38,6 +38,8 @@ export async function renderWorkspace(container, materialId) {
         <h1>${escapeHtml(material.title)}</h1>
         <span class="badge level">${material.level}</span>
         <span class="badge">${MODE_LABELS[material.mode] || material.mode}</span>
+        ${material.contentSource ? `<span class="badge" title="Which LLM produced this material">🤖 ${escapeHtml(material.contentSource)}</span>` : ''}
+        ${material.createdAt ? `<span class="badge text-muted" title="Created">${formatDateTime(material.createdAt)}</span>` : ''}
         <button class="btn ghost" id="ws-pdf">Worksheet PDF</button>
         <button class="icon-btn" id="ws-favorite" aria-label="Toggle favorite">${material.isFavorite ? '★' : '☆'}</button>
       </header>
@@ -272,6 +274,20 @@ function wireQuestionBlocks(root) {
 }
 
 // ---------- utils ----------
+
+// Date + time (unlike utils/helpers.js's formatDate, which is date-only —
+// used elsewhere like "Last studied: Aug 10" where time isn't useful).
+// Shown in the workspace header so a pre-produced-content batch is
+// traceable to exactly when it was imported.
+function formatDateTime(isoString) {
+  return new Date(isoString).toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
 
 function escapeHtml(str) {
   return String(str).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c])
