@@ -5,6 +5,7 @@ import './styles/layout.css'
 import { getAllSettings } from './db.js'
 import { renderSettings, applyTheme, applyAccent } from './modules/settings.js'
 import { renderGenerator } from './modules/generator.js'
+import { renderContentStudio } from './modules/content-studio.js'
 import { renderWorkspace } from './modules/workspace.js'
 import { renderLibrary } from './modules/library.js'
 import { renderDashboard } from './modules/dashboard.js'
@@ -16,6 +17,7 @@ import { sidebarHTML, wireSidebar } from './components/sidebar.js'
 const ROUTES = {
   dashboard: renderDashboard,
   generator: renderGenerator,
+  'content-studio': renderContentStudio,
   library: renderLibrary,
   statistics: renderStatistics,
   settings: renderSettings,
