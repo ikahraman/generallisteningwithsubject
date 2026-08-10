@@ -8,7 +8,8 @@
     "dev:all": "concurrently -n vite,edge-tts -c blue,magenta \"vite\" \"npm --prefix server start\"",
     "edge-tts-server": "npm --prefix server start",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "import-content": "node scripts/import-content.mjs"
   },
   "devDependencies": {
     "concurrently": "^10.0.4",
