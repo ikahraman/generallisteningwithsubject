@@ -275,6 +275,11 @@ input[type='range'] {
   border: 1px solid rgba(245, 158, 11, 0.3);
   color: var(--warning);
 }
+.banner.success {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: var(--success);
+}
 .banner.error {
   background: rgba(239, 68, 68, 0.1);
   border: 1px solid rgba(239, 68, 68, 0.3);

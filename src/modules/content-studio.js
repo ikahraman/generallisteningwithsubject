@@ -37,6 +37,7 @@ const SOURCE_SUGGESTIONS = ['Gemini', 'ChatGPT', 'Claude', 'Kimi', 'DeepSeek', '
 let pastedResponse = ''
 let statusMessage = ''
 let statusIsError = false
+let lastImportedId = null
 let isImporting = false
 let sessionLog = [] // { key, title, id, action: 'added'|'updated' }, newest first
 
@@ -142,7 +143,14 @@ export async function renderContentStudio(container) {
             ${SOURCE_SUGGESTIONS.map((s) => `<option value="${escapeAttr(s)}">`).join('')}
           </datalist>
         </div>
-        ${statusMessage ? `<div class="banner ${statusIsError ? 'error' : ''}" style="margin-top:10px;">${escapeHtml(statusMessage)}</div>` : ''}
+        ${
+          statusMessage
+            ? `<div class="banner ${statusIsError ? 'error' : 'success'}" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-top:10px;">
+                <span>${escapeHtml(statusMessage)}${!statusIsError ? ' You can also find it later in Library.' : ''}</span>
+                ${!statusIsError && lastImportedId ? `<a class="btn primary" href="#/workspace/${lastImportedId}">▶ Open in Workspace</a>` : ''}
+              </div>`
+            : ''
+        }
         <button class="btn primary" id="cs-import" style="margin-top:10px;" ${isImporting ? 'disabled' : ''}>
           ${isImporting ? spinnerHTML() + 'Importing…' : '⬆ Validate & Import'}
         </button>
@@ -298,7 +306,9 @@ async function handleImport(root) {
     pastedResponse = ''
     statusMessage = `${action === 'added' ? 'Added' : 'Updated'} "${material.title}" (#${id}).`
     statusIsError = false
+    lastImportedId = id
   } catch (err) {
+    lastImportedId = null
     statusMessage = err.message || 'Import failed.'
     statusIsError = true
   } finally {
