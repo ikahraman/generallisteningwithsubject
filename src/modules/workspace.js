@@ -145,11 +145,13 @@ function hasShadowing() {
 
 // Ear Training and Shadowing sit right after Vocabulary — both are
 // listening/speaking practice, conceptually closer to it than to the
-// comprehension question groups that follow.
+// comprehension question groups that follow. Summary and Transcript are
+// last — vocab/practice/questions come first, the full text is there for
+// reference/review after.
 function tabIds() {
   const earTraining = hasEarTraining() ? ['groupD'] : []
   const shadowing = hasShadowing() ? ['shadowing'] : []
-  return ['transcript', 'summary', 'vocab', 'vocabLesson', ...earTraining, ...shadowing, 'groupA', 'groupB', 'groupC', 'review']
+  return ['vocab', 'vocabLesson', ...earTraining, ...shadowing, 'groupA', 'groupB', 'groupC', 'review', 'summary', 'transcript']
 }
 
 function tabLabel(t) {
