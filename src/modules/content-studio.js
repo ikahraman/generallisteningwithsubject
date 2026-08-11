@@ -276,6 +276,7 @@ async function handleImport(root) {
       wordCount,
       duration: estimateDuration(wordCount),
       transcript: validated.transcript,
+      summary: validated.summary,
       paragraphs: validated.paragraphs,
       questions: validated.questions,
       vocabulary: validated.vocabulary,

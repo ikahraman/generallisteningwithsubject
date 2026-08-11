@@ -41,6 +41,7 @@ Return ONLY a valid JSON object with this exact structure:
 {
   "title": "...",
   "transcript": "full text with paragraphs separated by \\n\\n",
+  "summary": "a concise ~10-sentence summary of the transcript's key points, written as flowing natural prose (not a bullet list) — short enough to double as model material for speaking (read-aloud/shadowing) or writing practice on this topic",
   "paragraphs": [
     { "text": "paragraph 1", "sentences": ["sentence 1", "sentence 2"] }
   ],
@@ -79,6 +80,8 @@ Question format for each item in groupA/groupB/groupC:
 STRICT RULE: these are OPEN-ENDED / fill-in questions — do NOT include "options" or "correctIndex" fields, and do NOT phrase the question text as a multiple-choice prompt (no "A) ... B) ..."). The student writes their own free-text answer; "correctAnswer" is the model answer shown later in an answer key, not a set of choices. Group C's fill-in-the-blank items should use "___" in the question text for the blank, with "correctAnswer" holding the missing word/phrase.
 
 Provide 10-15 vocabulary items — each MUST have a pronunciation guide, a Turkish meaning, exactly one synonym, exactly one antonym, and exactly 2 English example sentences that use the word, each example ALSO carrying its own phonetic transcription of the whole sentence (not just the headword). Also provide 5-8 expressions, 3-5 grammar points, and exactly 10 shadowing sentences: real sentences taken verbatim from the transcript, medium length (roughly 8-15 words each — not a short fragment, not a run-on), spread across the paragraphs for variety, each with its "paragraphRef".
+
+The "summary" field must be EXACTLY 10 sentences — condensing the whole transcript's main ideas into a short, coherent, standalone paragraph a student could read aloud for pronunciation/fluency practice or use as a model when writing their own summary. Not copied verbatim from the transcript — genuinely condensed and rephrased.
 
 CRITICAL OUTPUT RULES — this JSON is parsed programmatically with no human review, so it must be perfect on the first try:
 - Output ONLY the raw JSON object and nothing else. No markdown code fences (no \`\`\`json or \`\`\`), no preamble like "Here is the JSON:", no explanation or notes before or after it. Your entire response must start with { and end with }.

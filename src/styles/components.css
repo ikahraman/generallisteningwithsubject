@@ -621,6 +621,13 @@ input[type='range'] {
   inset: -8px;
 }
 
+/* -- summary -- */
+.summary-text {
+  margin-top: var(--space-6);
+  line-height: 1.9;
+  font-size: 1rem;
+}
+
 /* -- transcript -- */
 .transcript .paragraph {
   margin-bottom: var(--space-6);

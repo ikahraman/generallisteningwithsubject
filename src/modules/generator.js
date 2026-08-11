@@ -291,6 +291,7 @@ async function handleGenerate(root) {
       wordCount,
       duration: estimateDuration(wordCount),
       transcript: parsed.transcript,
+      summary: parsed.summary,
       paragraphs: parsed.paragraphs,
       questions: parsed.questions,
       vocabulary: parsed.vocabulary,

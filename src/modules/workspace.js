@@ -4,6 +4,7 @@ import { flattenSentences } from '../api/material-player.js'
 import { questionBlockHTML, wireQuestionBlock } from '../components/question-block.js'
 import { MODE_LABELS, GROUP_LABELS, hasAudioMode } from './material-modes.js'
 import { renderAudioSection, setupAudioPlayer, destroyAudioPlayer, loadAudioTracks } from './workspace-audio.js'
+import { renderSummaryPanel, wireSummaryPanel } from './workspace-summary.js'
 import { renderVocabCard, wireVocabCard, vocabMatchTitle } from './workspace-vocab.js'
 import { renderVocabLessonPanel, wireVocabLessonPanel } from './workspace-vocab-lesson.js'
 import { renderEarTrainingPanel, wireEarTrainingPanel } from './workspace-ear-training.js'
@@ -148,11 +149,12 @@ function hasShadowing() {
 function tabIds() {
   const earTraining = hasEarTraining() ? ['groupD'] : []
   const shadowing = hasShadowing() ? ['shadowing'] : []
-  return ['transcript', 'vocab', 'vocabLesson', ...earTraining, ...shadowing, 'groupA', 'groupB', 'groupC', 'review']
+  return ['transcript', 'summary', 'vocab', 'vocabLesson', ...earTraining, ...shadowing, 'groupA', 'groupB', 'groupC', 'review']
 }
 
 function tabLabel(t) {
   if (t === 'transcript') return 'Transcript'
+  if (t === 'summary') return 'Summary'
   if (t === 'vocab') return 'Vocabulary'
   if (t === 'vocabLesson') return 'Vocab Lesson'
   if (t === 'shadowing') return 'Shadowing'
@@ -180,6 +182,9 @@ function scoreLabel() {
 function renderTabPanel() {
   if (activeTab === 'transcript') {
     return `<div class="transcript" id="ws-transcript">${renderTranscript()}</div>`
+  }
+  if (activeTab === 'summary') {
+    return renderSummaryPanel(material)
   }
   if (activeTab === 'vocab') {
     return renderVocabCard(material.vocabulary)
@@ -209,7 +214,7 @@ function renderTabPanel() {
 // question groups — Transcript/Vocabulary/Shadowing have nothing to check,
 // and Ear Training checks itself per-exercise (Check/Try Again on each
 // card) — so it's hidden on all of those tabs.
-const NO_SCORE_BAR_TABS = ['transcript', 'vocab', 'vocabLesson', 'groupD', 'shadowing']
+const NO_SCORE_BAR_TABS = ['transcript', 'summary', 'vocab', 'vocabLesson', 'groupD', 'shadowing']
 function updateScoreBarVisibility(root) {
   const bar = root.querySelector('.ws-score-bar')
   if (bar) bar.style.display = NO_SCORE_BAR_TABS.includes(activeTab) ? 'none' : ''
@@ -244,6 +249,10 @@ function wireMainPanel(root) {
 function wireQuestionBlocks(root) {
   if (activeTab === 'transcript') {
     wireTranscriptTab(root)
+    return
+  }
+  if (activeTab === 'summary') {
+    wireSummaryPanel(root, material)
     return
   }
   if (activeTab === 'vocab') {

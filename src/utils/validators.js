@@ -50,6 +50,9 @@ export function validateMaterialJSON(obj) {
   return {
     title: String(obj.title || 'Untitled Material'),
     transcript: String(obj.transcript || ''),
+    // Optional — materials generated before this field existed just won't
+    // have one; Workspace's Summary tab shows an empty-state for those.
+    summary: String(obj.summary || ''),
     paragraphs: obj.paragraphs.map(normalizeParagraph),
     vocabulary: validateVocabulary(obj.vocabulary),
     expressions: Array.isArray(obj.expressions) ? obj.expressions : [],
