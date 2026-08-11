@@ -5,7 +5,7 @@
 import { getAudioBlob, getAudioTracks } from '../db.js'
 import { getSetting } from '../db.js'
 import { MaterialPlayer } from '../api/material-player.js'
-import { generateBothEngines, DEFAULT_VOICES } from '../api/tts.js'
+import { generateBothEngines, generateAndCacheAudioWithEngine, DEFAULT_VOICES } from '../api/tts.js'
 import { synthesizeSpeech as synthesizeEdgeSpeech, EDGE_TTS_VOICES } from '../api/edge-tts.js'
 import { synthesizeSpeech as synthesizeCloudSpeech, CLOUD_TTS_VOICES } from '../api/cloud-tts.js'
 import { pcmToWavBlob } from '../api/gemini.js'
@@ -189,7 +189,14 @@ export function renderAudioSection(audioTracks, defaultSpeed = 1) {
   return `
     <div class="banner warning" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
       <span>No real audio generated for this material yet. You can listen with your browser's voice below, or generate real audio now.</span>
-      <button class="btn primary" id="ws-generate-speech">🔊 Generate Speech (Cloud + Edge)</button>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <select id="ws-engine-select" title="Which engine(s) to generate with">
+          <option value="both">Cloud + Edge (both)</option>
+          <option value="edge">Edge TTS only — fast, no Google quota</option>
+          <option value="cloud">Google Cloud TTS only</option>
+        </select>
+        <button class="btn primary" id="ws-generate-speech">🔊 Generate Speech</button>
+      </div>
     </div>
     ${audioPlayerHTML(defaultSpeed)}
   `
@@ -277,17 +284,37 @@ export async function requireApiKey() {
   return apiKey || null
 }
 
-// Generates both Cloud and Edge TTS (Gemini as a last-resort safety net if
-// both fail — see generateBothEngines), then downloads whichever track is
-// now the default so callers get a blob back immediately (e.g. to
-// download). Fetching the blob here is fine — the user just explicitly
-// asked to generate, so a short wait is expected, unlike the page-load
-// path in setupAudioPlayer which must never block on it. Returns null
-// (after showing the "no key" modal) instead of throwing when the key is
-// missing, so callers only handle the real-failure case.
-async function ensureAudioGenerated(material, onProgress) {
+// engineChoice: 'both' (default) generates Cloud and Edge independently —
+// Gemini as a last-resort safety net if both fail (see generateBothEngines)
+// — or 'edge'/'cloud' generates ONLY that one engine, no fallback and no
+// waiting on the other engine first. The "both" default tries Cloud first;
+// if it's having a bad day (quota, slow responses near the 30s timeout —
+// across several paragraphs that adds up to minutes before it even gets to
+// Edge), picking "Edge only" skips straight past that wait entirely.
+// Downloads whichever track ends up current so callers get a blob back
+// immediately (e.g. to download). Fetching the blob here is fine — the
+// user just explicitly asked to generate, so a short wait is expected,
+// unlike the page-load path in setupAudioPlayer which must never block on
+// it. Returns null (after showing the "no key" modal) instead of throwing
+// when the key is missing, so callers only handle the real-failure case.
+async function ensureAudioGenerated(material, engineChoice, onProgress) {
   const apiKey = await requireApiKey()
   if (!apiKey) return null
+
+  if (engineChoice === 'edge' || engineChoice === 'cloud') {
+    const blob = await generateAndCacheAudioWithEngine(
+      material.id,
+      material.paragraphs,
+      apiKey,
+      DEFAULT_VOICES,
+      engineChoice,
+      onProgress,
+      engineChoice
+    )
+    trackOverride = { materialId: material.id, kind: engineChoice }
+    return blob
+  }
+
   await generateBothEngines(material.id, material.paragraphs, apiKey, DEFAULT_VOICES, onProgress)
   trackOverride = null
   const { defaultKind } = await loadAudioTracks(material.id)
@@ -306,7 +333,7 @@ export function showAudioErrorModal(err) {
 
 async function generateAudioOnDemand(root, material, onAudioChanged) {
   try {
-    const blob = await ensureAudioGenerated(material)
+    const blob = await ensureAudioGenerated(material, 'both')
     if (!blob) return
     downloadBlob(blob, `${slugify(material.title)}.wav`)
     destroyAudioPlayer()
@@ -318,10 +345,11 @@ async function generateAudioOnDemand(root, material, onAudioChanged) {
 
 async function generateSpeechInPlace(root, material, onAudioChanged) {
   const btn = root.querySelector('#ws-generate-speech')
+  const engineChoice = root.querySelector('#ws-engine-select')?.value || 'both'
   const resetBtn = () => {
     if (btn) {
       btn.disabled = false
-      btn.textContent = '🔊 Generate Speech (Cloud + Edge)'
+      btn.textContent = '🔊 Generate Speech'
     }
   }
   if (btn) {
@@ -329,7 +357,7 @@ async function generateSpeechInPlace(root, material, onAudioChanged) {
     btn.innerHTML = '<span class="spinner"></span> Generating…'
   }
   try {
-    const blob = await ensureAudioGenerated(material, (engine, i, n) => {
+    const blob = await ensureAudioGenerated(material, engineChoice, (engine, i, n) => {
       if (btn) btn.innerHTML = `<span class="spinner"></span> ${ENGINE_LABELS[engine] || engine} (${i}/${n})…`
     })
     if (!blob) return resetBtn()
