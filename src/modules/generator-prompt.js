@@ -80,7 +80,11 @@ STRICT RULE: these are OPEN-ENDED / fill-in questions — do NOT include "option
 
 Provide 10-15 vocabulary items — each MUST have a pronunciation guide, a Turkish meaning, exactly one synonym, exactly one antonym, and exactly 2 English example sentences that use the word, each example ALSO carrying its own phonetic transcription of the whole sentence (not just the headword). Also provide 5-8 expressions, 3-5 grammar points, and exactly 10 shadowing sentences: real sentences taken verbatim from the transcript, medium length (roughly 8-15 words each — not a short fragment, not a run-on), spread across the paragraphs for variety, each with its "paragraphRef".
 
-DO NOT include markdown code blocks. Return raw JSON only.`
+CRITICAL OUTPUT RULES — this JSON is parsed programmatically with no human review, so it must be perfect on the first try:
+- Output ONLY the raw JSON object and nothing else. No markdown code fences (no \`\`\`json or \`\`\`), no preamble like "Here is the JSON:", no explanation or notes before or after it. Your entire response must start with { and end with }.
+- Valid JSON syntax only: double-quoted keys and string values (never single quotes or unquoted keys), no trailing commas after the last item in any array or object, no comments, every brace and bracket properly matched and closed.
+- Every double-quote, newline, or backslash that appears INSIDE a string value (e.g. inside "transcript", a question's "text", a quoted phrase) must be escaped correctly (\\", \\n, \\\\) — this is the single most common cause of broken JSON in long text fields, so pay special attention to it.
+- Before you finalize your answer, mentally re-parse the entire JSON structure from top to bottom and verify: every string is correctly escaped, every array/object is properly closed, there are no stray or trailing commas, and no duplicate keys. If you find an issue, fix it before responding — do not output a first draft that still has errors.`
 }
 
 /**
