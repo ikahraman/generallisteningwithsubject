@@ -14,12 +14,13 @@ import { openModal } from '../components/modal.js'
 import { showToast } from '../components/toast.js'
 import { downloadBlob, slugify, pickBestVoice } from '../utils/helpers.js'
 
-export const ENGINE_LABELS = { cloud: 'Google Cloud TTS', edge: 'Edge TTS', gemini: 'Gemini TTS' }
+export const ENGINE_LABELS = { cloud: 'Google Cloud TTS', edge: 'Edge TTS', gemini: 'Gemini TTS', bbc: 'BBC (original audio)' }
 
-// Which cached track plays by default: Cloud > Edge > Gemini (last-resort
-// safety net) > the unlabeled legacy slot from before materials could have
-// more than one track.
-const TRACK_PRIORITY = ['cloud', 'edge', 'gemini', null]
+// Which cached track plays by default: BBC's own recording (real audio, not
+// synthesized) beats every TTS engine when it's available, then Cloud > Edge
+// > Gemini (last-resort safety net) > the unlabeled legacy slot from before
+// materials could have more than one track.
+const TRACK_PRIORITY = ['bbc', 'cloud', 'edge', 'gemini', null]
 
 let player = null
 // Remembers a manual track switch for the current workspace visit (reset

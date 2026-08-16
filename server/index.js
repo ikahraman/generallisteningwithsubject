@@ -12,6 +12,7 @@ import express from 'express'
 import cors from 'cors'
 import { Communicate } from 'edge-tts-universal'
 import * as store from './store.js'
+import * as bbc from './bbc.js'
 
 const PORT = process.env.PORT || 5175
 
@@ -145,6 +146,29 @@ app.post('/api/import', asyncRoute(async (req, res) => {
 }))
 app.post('/api/clear', asyncRoute(async (req, res) => {
   await store.clearAllData()
+  res.json({ ok: true })
+}))
+
+// ---------- BBC Content import ----------
+// Runs entirely server-side (see bbc.js) — no CORS issue talking to BBC
+// directly from Node. Two steps: fetch metadata + extract the transcript
+// (fast-ish, text only) first so the client can preview it before spending
+// an AI call on it; downloading the (multi-MB) audio is a separate step,
+// triggered only once a material actually exists to attach it to.
+
+app.post('/api/bbc/import', asyncRoute(async (req, res) => {
+  const { url } = req.body || {}
+  if (!url) return res.status(400).json({ error: '"url" is required.' })
+  const meta = await bbc.fetchBbcEpisodeMeta(url)
+  const transcript = await bbc.extractTranscriptFromPdf(meta.pdfUrl)
+  res.json({ ...meta, transcript })
+}))
+
+app.post('/api/bbc/audio/:materialId', asyncRoute(async (req, res) => {
+  const { mp3Url } = req.body || {}
+  if (!mp3Url) return res.status(400).json({ error: '"mp3Url" is required.' })
+  const buffer = await bbc.fetchAudioBuffer(mp3Url)
+  await store.saveAudioBlob(Number(req.params.materialId), buffer, 'bbc', 'bbc')
   res.json({ ok: true })
 }))
 

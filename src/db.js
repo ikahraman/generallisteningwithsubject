@@ -179,6 +179,49 @@ export function getAllStudyLog() {
   return request('GET', '/api/study-log')
 }
 
+// ---------- BBC Content import ----------
+// Both hit BBC directly (server-side, see server/bbc.js) rather than
+// going through this module's request()/extractError() helper, since they
+// need their own longer timeouts — fetching a BBC page + downloading its
+// transcript PDF, or a multi-MB audio file, legitimately takes longer than
+// the rest of this app's API calls.
+
+const BBC_IMPORT_TIMEOUT_MS = 30000
+const BBC_AUDIO_TIMEOUT_MS = 60000
+
+export async function importBbcEpisode(url) {
+  let res
+  try {
+    res = await fetchWithToken(`${SERVER_URL}/api/bbc/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+      signal: AbortSignal.timeout(BBC_IMPORT_TIMEOUT_MS),
+    })
+  } catch (err) {
+    if (err.name === 'TimeoutError') throw new Error(`Timed out fetching that page after ${BBC_IMPORT_TIMEOUT_MS / 1000}s.`)
+    throw new Error('Library server is not reachable — is it running? (npm start inside server/)')
+  }
+  if (!res.ok) throw new Error(await extractError(res))
+  return res.json()
+}
+
+export async function saveBbcAudio(materialId, mp3Url) {
+  let res
+  try {
+    res = await fetchWithToken(`${SERVER_URL}/api/bbc/audio/${materialId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mp3Url }),
+      signal: AbortSignal.timeout(BBC_AUDIO_TIMEOUT_MS),
+    })
+  } catch (err) {
+    if (err.name === 'TimeoutError') throw new Error(`Audio download timed out after ${BBC_AUDIO_TIMEOUT_MS / 1000}s.`)
+    throw new Error('Library server is not reachable — is it running? (npm start inside server/)')
+  }
+  if (!res.ok) throw new Error(await extractError(res))
+}
+
 // ---------- bulk data (export/import, Settings module) ----------
 
 export function exportAllData() {

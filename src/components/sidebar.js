@@ -2,6 +2,7 @@ const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: '🏠' },
   { id: 'generator', label: 'Generate', icon: '✨' },
   { id: 'content-studio', label: 'Content Studio', icon: '🛠️' },
+  { id: 'bbc-content', label: 'BBC Content', icon: '📻' },
   { id: 'library', label: 'Library', icon: '📚' },
   { id: 'statistics', label: 'Statistics', icon: '📊' },
   { id: 'settings', label: 'Settings', icon: '⚙️' },
