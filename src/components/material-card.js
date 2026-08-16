@@ -16,9 +16,21 @@ function questionProgress(material) {
   return { answered, total }
 }
 
+// Derived from sourceUrl rather than a stored field, so existing materials
+// (created before this badge existed) get a correct tag with no migration —
+// BBC Content/YouTube Content are the only flows that set sourceUrl at all,
+// so its presence/host already fully determines where a material came from.
+function sourceTag(material) {
+  if (!material.sourceUrl) return { label: 'Topic', icon: '✨' }
+  if (/youtube\.com|youtu\.be/.test(material.sourceUrl)) return { label: 'YouTube', icon: '▶️' }
+  if (/bbc\.co\.uk/.test(material.sourceUrl)) return { label: 'BBC', icon: '📻' }
+  return { label: 'Source', icon: '🔗' }
+}
+
 export function materialCardHTML(material, selected, { showSelect = true } = {}) {
   const { answered, total } = questionProgress(material)
   const pct = total ? Math.round((answered / total) * 100) : 0
+  const tag = sourceTag(material)
 
   return `
     <div class="material-card" data-id="${material.id}">
@@ -34,6 +46,7 @@ export function materialCardHTML(material, selected, { showSelect = true } = {})
       <div class="card-badges">
         <span class="badge level">${material.level}</span>
         <span class="badge">${MODE_LABELS[material.mode] || material.mode}</span>
+        <span class="badge" title="How this material was produced">${tag.icon} ${tag.label}</span>
       </div>
       <p class="card-meta">${material.wordCount || 0} words · ~${Math.round((material.duration || 0) / 60)} min</p>
       <p class="card-meta text-muted">Last studied: ${formatDate(material.lastStudiedAt)}</p>
