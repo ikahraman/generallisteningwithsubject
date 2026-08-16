@@ -50,6 +50,12 @@ async function dumpJson(url) {
   } catch (err) {
     if (err.code === 'ENOENT') throw new Error('yt-dlp is not installed on the server.')
     if (err.killed) throw new Error('Timed out reading that video (yt-dlp took too long).')
+    // The client-facing message is deliberately generic (the real cause is
+    // usually a yt-dlp/YouTube implementation detail, not something the user
+    // can act on) — but that means the actual reason has to go to the server
+    // log, or a real failure is undiagnosable from anything short of SSHing
+    // in and re-running yt-dlp by hand.
+    console.error('[youtube] dump-json failed:', err.stderr || err.message)
     throw new Error('Could not read that video — it may be private, age-restricted, region-locked, or removed.')
   }
   return JSON.parse(stdout)
@@ -156,7 +162,9 @@ export async function fetchYoutubeAudioBuffer(url) {
   } catch (err) {
     if (err.code === 'ENOENT') throw new Error('yt-dlp is not installed on the server.')
     if (err.killed) throw new Error('Timed out downloading that video\'s audio.')
-    throw err instanceof Error && err.message === 'yt-dlp produced no audio file.' ? err : new Error("Could not download this video's audio.")
+    if (err instanceof Error && err.message === 'yt-dlp produced no audio file.') throw err
+    console.error('[youtube] audio download failed:', err.stderr || err.message)
+    throw new Error("Could not download this video's audio.")
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
