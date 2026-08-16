@@ -222,6 +222,52 @@ export async function saveBbcAudio(materialId, mp3Url) {
   if (!res.ok) throw new Error(await extractError(res))
 }
 
+// ---------- YouTube Content import ----------
+// Same shape as the BBC pair above — see server/youtube.js for why a video
+// URL round trip (yt-dlp resolving captions/formats) can legitimately take
+// longer than this module's other calls.
+
+const YOUTUBE_IMPORT_TIMEOUT_MS = 30000
+// Longer than BBC's — this is yt-dlp actually downloading through YouTube's
+// CDN (not a static file URL), which can be considerably slower, and the
+// server's own yt-dlp timeout is already 180s; this needs headroom above
+// that so a slow-but-successful download doesn't get reported as failed
+// just because the client gave up first.
+const YOUTUBE_AUDIO_TIMEOUT_MS = 200000
+
+export async function importYoutubeVideo(url) {
+  let res
+  try {
+    res = await fetchWithToken(`${SERVER_URL}/api/youtube/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+      signal: AbortSignal.timeout(YOUTUBE_IMPORT_TIMEOUT_MS),
+    })
+  } catch (err) {
+    if (err.name === 'TimeoutError') throw new Error(`Timed out fetching that video after ${YOUTUBE_IMPORT_TIMEOUT_MS / 1000}s.`)
+    throw new Error('Library server is not reachable — is it running? (npm start inside server/)')
+  }
+  if (!res.ok) throw new Error(await extractError(res))
+  return res.json()
+}
+
+export async function saveYoutubeAudio(materialId, sourceUrl) {
+  let res
+  try {
+    res = await fetchWithToken(`${SERVER_URL}/api/youtube/audio/${materialId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourceUrl }),
+      signal: AbortSignal.timeout(YOUTUBE_AUDIO_TIMEOUT_MS),
+    })
+  } catch (err) {
+    if (err.name === 'TimeoutError') throw new Error(`Audio download timed out after ${YOUTUBE_AUDIO_TIMEOUT_MS / 1000}s.`)
+    throw new Error('Library server is not reachable — is it running? (npm start inside server/)')
+  }
+  if (!res.ok) throw new Error(await extractError(res))
+}
+
 // ---------- bulk data (export/import, Settings module) ----------
 
 export function exportAllData() {

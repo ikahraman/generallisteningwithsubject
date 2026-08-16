@@ -40,7 +40,7 @@ export async function renderWorkspace(container, materialId) {
         <span class="badge level">${material.level}</span>
         <span class="badge">${MODE_LABELS[material.mode] || material.mode}</span>
         ${material.contentSource ? `<span class="badge" title="Which LLM produced this material">🤖 ${escapeHtml(material.contentSource)}</span>` : ''}
-        ${material.sourceUrl ? `<a class="badge" href="${escapeAttr(material.sourceUrl)}" target="_blank" rel="noopener" title="Original BBC source">📻 Source</a>` : ''}
+        ${material.sourceUrl ? `<a class="badge" href="${escapeAttr(material.sourceUrl)}" target="_blank" rel="noopener" title="Original source">🔗 Source</a>` : ''}
         ${material.createdAt ? `<span class="badge text-muted" title="Created">${formatDateTime(material.createdAt)}</span>` : ''}
         <button class="btn ghost" id="ws-pdf">Worksheet PDF</button>
         <button class="icon-btn" id="ws-favorite" aria-label="Toggle favorite">${material.isFavorite ? '★' : '☆'}</button>

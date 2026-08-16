@@ -1,12 +1,10 @@
-// BBC Content: same material structure/UI as Generator (vocab, questions,
-// grammar, shadowing, summary), but the source is a real BBC Learning
-// English episode instead of an AI-invented topic. Two server round trips
-// (see server/bbc.js): first fetch+parse the page/transcript so the user can
-// preview it before spending an AI call, then — only after a material
-// exists to attach it to — download the real BBC mp3 as an extra audio
-// track (kind 'bbc'), which workspace-audio.js's TRACK_PRIORITY prefers
-// over any TTS engine since it's a real recording, not synthesized speech.
-import { getSetting, addMaterial, importBbcEpisode, saveBbcAudio } from '../db.js'
+// YouTube Content: same shape as bbc-content.js — paste a link, preview the
+// real transcript, then build the same vocab/questions/grammar/shadowing
+// material Generator produces, with the real video audio attached instead
+// of TTS. See server/youtube.js for how the transcript/audio are resolved
+// (yt-dlp, since a bare fetch() can no longer reliably read YouTube's own
+// caption/format URLs).
+import { getSetting, addMaterial, importYoutubeVideo, saveYoutubeAudio } from '../db.js'
 import { generateMaterialJSON } from '../api/gemini.js'
 import { parseGeminiMaterialJSON } from '../utils/validators.js'
 import { countWords, estimateDuration, formatDate, splitSentences } from '../utils/helpers.js'
@@ -14,10 +12,10 @@ import { buildTranscriptAnalysisPrompt } from './transcript-analysis-prompt.js'
 import { MODES } from './material-modes.js'
 
 const LEVELS = ['A1+', 'A2', 'B1', 'B2', 'C1', 'C2']
-const BBC_MODE = 'careful' // real spoken dialogue, denser than a scripted "selective" passage — closest existing mode
+const YOUTUBE_MODE = 'careful' // real spoken content, denser than a scripted "selective" passage — closest existing mode
 
 let formState = { url: '', level: 'B1' }
-let episode = null // { title, description, pdfUrl, mp3Url, sourceUrl, transcript }
+let video = null // { videoId, title, channel, thumbnail, sourceUrl, transcript }
 let isFetching = false
 let isGenerating = false
 let fetchError = ''
@@ -25,14 +23,14 @@ let generateError = ''
 let progressText = ''
 let lastResult = null // { material, id }
 
-export async function renderBbcContent(container) {
+export async function renderYoutubeContent(container) {
   const apiKey = await getSetting('geminiApiKey', '')
 
   container.innerHTML = `
     <div class="page">
-      <h1 class="section-title">BBC Content</h1>
+      <h1 class="section-title">YouTube Content</h1>
       <p class="card-hint" style="margin-bottom: var(--space-6);">
-        Paste a link to a BBC Learning English episode — its real transcript and audio are pulled in directly, then built out into the same vocabulary/questions/grammar/shadowing material as everything else in the library.
+        Paste a YouTube video link — its real captions and audio are pulled in directly, then built out into the same vocabulary/questions/grammar/shadowing material as everything else in the library.
       </p>
 
       ${!apiKey ? `<div class="banner warning">No Gemini API key set. <a href="#/settings">Add one in Settings</a> to build study material from the transcript.</div>` : ''}
@@ -40,23 +38,23 @@ export async function renderBbcContent(container) {
 
       <div class="card">
         <div class="field">
-          <label class="field-label" for="bbc-url">BBC Learning English URL</label>
-          <input type="text" id="bbc-url" placeholder="https://www.bbc.co.uk/learningenglish/features/..." value="${escapeAttr(formState.url)}" />
+          <label class="field-label" for="yt-url">YouTube URL</label>
+          <input type="text" id="yt-url" placeholder="https://www.youtube.com/watch?v=..." value="${escapeAttr(formState.url)}" />
         </div>
         <div class="field row">
           <div style="flex:1;">
-            <label class="field-label" for="bbc-level">Target Level</label>
-            <select id="bbc-level">
+            <label class="field-label" for="yt-level">Target Level</label>
+            <select id="yt-level">
               ${LEVELS.map((l) => `<option ${l === formState.level ? 'selected' : ''}>${l}</option>`).join('')}
             </select>
           </div>
         </div>
-        <button class="btn primary" id="bbc-fetch" ${isFetching ? 'disabled' : ''}>
-          ${isFetching ? spinnerHTML() + 'Fetching…' : 'Fetch Episode'}
+        <button class="btn primary" id="yt-fetch" ${isFetching ? 'disabled' : ''}>
+          ${isFetching ? spinnerHTML() + 'Fetching…' : 'Fetch Video'}
         </button>
       </div>
 
-      ${episode ? renderEpisodePreview(apiKey) : ''}
+      ${video ? renderVideoPreview(apiKey) : ''}
       ${lastResult ? renderResultCard(lastResult) : ''}
     </div>
   `
@@ -64,20 +62,25 @@ export async function renderBbcContent(container) {
   wireEvents(container)
 }
 
-function renderEpisodePreview(apiKey) {
-  const wordCount = countWords(episode.transcript)
+function renderVideoPreview(apiKey) {
+  const wordCount = countWords(video.transcript)
   return `
     <div class="card">
-      <h2 class="card-title">${escapeHtml(episode.title)}</h2>
-      <p class="card-hint">${escapeHtml(episode.description || '')}</p>
-      <p class="card-hint">${wordCount} words transcribed ${episode.mp3Url ? '· 🔊 audio available' : '· no audio file found on this page'}</p>
+      <div class="row" style="align-items:flex-start; gap:12px;">
+        ${video.thumbnail ? `<img src="${escapeAttr(video.thumbnail)}" alt="" style="width:120px; border-radius:8px; flex-shrink:0;" />` : ''}
+        <div>
+          <h2 class="card-title">${escapeHtml(video.title)}</h2>
+          <p class="card-hint">${escapeHtml(video.channel || '')}</p>
+          <p class="card-hint">${wordCount} words transcribed from captions</p>
+        </div>
+      </div>
       <details style="margin-top:10px;">
         <summary style="cursor:pointer; color:var(--text-secondary);">Show transcript</summary>
-        <p style="margin-top:12px; white-space:pre-wrap; line-height:1.7;">${escapeHtml(episode.transcript)}</p>
+        <p style="margin-top:12px; white-space:pre-wrap; line-height:1.7;">${escapeHtml(video.transcript)}</p>
       </details>
 
       ${generateError ? `<div class="banner error" style="margin-top:12px;">${escapeHtml(generateError)}</div>` : ''}
-      <button class="btn primary" id="bbc-generate" style="margin-top:12px;" ${isGenerating || !apiKey ? 'disabled' : ''}>
+      <button class="btn primary" id="yt-generate" style="margin-top:12px;" ${isGenerating || !apiKey ? 'disabled' : ''}>
         ${isGenerating ? spinnerHTML() + (progressText || 'Generating…') : 'Build Study Material'}
       </button>
     </div>
@@ -92,7 +95,7 @@ function renderResultCard({ material, id }) {
         ${material.level} · ${MODES[material.mode].label} · ${material.wordCount} words ·
         ~${Math.round(material.duration / 60)} min · ${material.paragraphs.length} paragraphs ·
         ${material.vocabulary.length} vocab · ${countAllQuestions(material.questions)} questions
-        ${material.audioCached ? ' · 🔊 BBC audio attached' : ''}
+        ${material.audioCached ? ' · 🔊 YouTube audio attached' : ''}
       </p>
       <p class="card-hint">Saved to your library on ${formatDate(new Date().toISOString())}.</p>
       <a class="btn primary" href="#/workspace/${id}" style="margin-top:12px; display:inline-flex;">Open in Workspace</a>
@@ -105,31 +108,31 @@ function countAllQuestions(q) {
 }
 
 function wireEvents(root) {
-  root.querySelector('#bbc-url')?.addEventListener('input', (e) => (formState.url = e.target.value))
-  root.querySelector('#bbc-level')?.addEventListener('change', (e) => (formState.level = e.target.value))
-  root.querySelector('#bbc-fetch')?.addEventListener('click', () => handleFetch(root))
-  root.querySelector('#bbc-generate')?.addEventListener('click', () => handleGenerate(root))
+  root.querySelector('#yt-url')?.addEventListener('input', (e) => (formState.url = e.target.value))
+  root.querySelector('#yt-level')?.addEventListener('change', (e) => (formState.level = e.target.value))
+  root.querySelector('#yt-fetch')?.addEventListener('click', () => handleFetch(root))
+  root.querySelector('#yt-generate')?.addEventListener('click', () => handleGenerate(root))
 }
 
 async function handleFetch(root) {
   if (!formState.url.trim()) {
-    fetchError = 'Please paste a BBC Learning English URL first.'
-    return renderBbcContent(root)
+    fetchError = 'Please paste a YouTube video URL first.'
+    return renderYoutubeContent(root)
   }
 
   isFetching = true
   fetchError = ''
-  episode = null
+  video = null
   lastResult = null
-  await renderBbcContent(root)
+  await renderYoutubeContent(root)
 
   try {
-    episode = await importBbcEpisode(formState.url.trim())
+    video = await importYoutubeVideo(formState.url.trim())
   } catch (err) {
-    fetchError = err.message || 'Could not fetch that episode.'
+    fetchError = err.message || 'Could not fetch that video.'
   } finally {
     isFetching = false
-    await renderBbcContent(root)
+    await renderYoutubeContent(root)
   }
 }
 
@@ -137,38 +140,38 @@ async function handleGenerate(root) {
   const apiKey = await getSetting('geminiApiKey', '')
   if (!apiKey) {
     generateError = 'No Gemini API key set. Add one in Settings first.'
-    return renderBbcContent(root)
+    return renderYoutubeContent(root)
   }
 
   isGenerating = true
   generateError = ''
   progressText = 'Analyzing transcript…'
-  await renderBbcContent(root)
+  await renderYoutubeContent(root)
 
   try {
     const prompt = buildTranscriptAnalysisPrompt({
-      title: episode.title,
-      transcript: episode.transcript,
-      sourceUrl: episode.sourceUrl,
+      title: video.title,
+      transcript: video.transcript,
+      sourceUrl: video.sourceUrl,
       level: formState.level,
-      sourceLabel: 'BBC Learning English episode',
-      artifactNote: 'obvious PDF-extraction artifacts (stray spacing, a misplaced character)',
+      sourceLabel: 'YouTube video',
+      artifactNote: 'obvious auto-caption artifacts (missing punctuation, an obviously wrong word if the context makes the correct one unambiguous)',
     })
     const raw = await generateMaterialJSON(apiKey, prompt)
     const parsed = parseGeminiMaterialJSON(raw)
-    // Belt-and-suspenders against the prompt instruction being ignored: for
-    // real BBC dialogue, "sentences" must always come from splitting the
-    // real "text" verbatim, never from whatever the AI put in that field
-    // (it has a habit of writing a paraphrased summary there instead).
+    // Belt-and-suspenders against the prompt instruction being ignored: real
+    // sentences must always come from splitting the real "text" verbatim,
+    // never from whatever the AI put in that field (see bbc-content.js for
+    // the transcript-paraphrase bug this guards against).
     parsed.paragraphs = parsed.paragraphs.map((p) => ({ text: p.text, sentences: splitSentences(p.text) }))
 
     const wordCount = countWords(parsed.transcript)
     const material = {
       title: parsed.title,
-      topic: 'BBC Learning English',
-      subtopic: episode.title,
+      topic: 'YouTube',
+      subtopic: video.title,
       level: formState.level,
-      mode: BBC_MODE,
+      mode: YOUTUBE_MODE,
       wordCount,
       duration: estimateDuration(wordCount),
       transcript: parsed.transcript,
@@ -183,34 +186,32 @@ async function handleGenerate(root) {
       bookmarks: [],
       userAnswers: { groupA: {}, groupB: {}, groupC: {} },
       earTrainingAnswers: {},
-      sourceUrl: episode.sourceUrl,
-      contentSource: 'Gemini (BBC transcript)',
+      sourceUrl: video.sourceUrl,
+      contentSource: 'Gemini (YouTube transcript)',
     }
 
     const id = await addMaterial(material)
     material.audioCached = false
 
-    if (episode.mp3Url) {
-      try {
-        progressText = 'Downloading BBC audio…'
-        await renderBbcContent(root)
-        await saveBbcAudio(id, episode.mp3Url)
-        material.audioCached = true
-      } catch (audioErr) {
-        // Non-fatal: material is saved; Workspace will fall back to browser TTS.
-        generateError = `Material saved, but the BBC audio download failed: ${audioErr.message}. Browser TTS will be used instead.`
-      }
+    try {
+      progressText = 'Downloading video audio…'
+      await renderYoutubeContent(root)
+      await saveYoutubeAudio(id, video.sourceUrl)
+      material.audioCached = true
+    } catch (audioErr) {
+      // Non-fatal: material is saved; Workspace will fall back to browser TTS.
+      generateError = `Material saved, but the video audio download failed: ${audioErr.message}. Browser TTS will be used instead.`
     }
 
     lastResult = { material, id }
     formState.url = ''
-    episode = null
+    video = null
   } catch (err) {
     generateError = err.message || 'Generation failed. Please try again.'
   } finally {
     isGenerating = false
     progressText = ''
-    await renderBbcContent(root)
+    await renderYoutubeContent(root)
   }
 }
 

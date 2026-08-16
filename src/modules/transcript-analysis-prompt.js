@@ -1,6 +1,7 @@
-// The Gemini prompt for BBC Content: unlike Generator's buildGenerationPrompt
+// The Gemini prompt shared by every "real source" content page (BBC
+// Content, YouTube Content, ...): unlike Generator's buildGenerationPrompt
 // (which asks Gemini to WRITE a new passage from a topic), this asks it to
-// ANALYZE a real, already-fetched BBC transcript and build the same study
+// ANALYZE a real, already-fetched transcript and build the same study
 // materials (vocab/grammar/questions/shadowing/summary/Ear Training) around
 // it verbatim — the transcript itself must not be rewritten. Produces the
 // same JSON shape as the main schema, so it goes through the same
@@ -10,16 +11,21 @@ import { buildEarTrainingSection, EAR_TRAINING_SCHEMA_SNIPPET } from './generato
 import { countWords } from '../utils/helpers.js'
 
 const QUESTIONS_PER_PARAGRAPH = 3
-// BBC transcripts are dialogue (short back-and-forth turns), not prose —
-// there's no natural "paragraph" in the source, so this estimates a
-// reasonable chunk count from length alone (roughly matching the ~200-250
-// words/paragraph the app's own generated materials average) purely to
-// size the question/Ear Training counts; Gemini decides the actual grouping.
+// Real transcripts (BBC dialogue, YouTube captions) have no natural
+// "paragraph" markup in the source, so this estimates a reasonable chunk
+// count from length alone (roughly matching the ~200-250 words/paragraph
+// the app's own generated materials average) purely to size the
+// question/Ear Training counts; Gemini decides the actual grouping.
 function estimateParagraphCount(wordCount) {
   return Math.max(2, Math.min(6, Math.round(wordCount / 220)))
 }
 
-export function buildBbcAnalysisPrompt({ title, transcript, sourceUrl, level }) {
+// sourceLabel names what's being analyzed in the prompt text (e.g. "BBC
+// Learning English episode", "YouTube video"); artifactNote describes the
+// specific kind of noise that source's extraction pipeline can introduce
+// (PDF layout quirks vs auto-caption typos) so Gemini knows what's safe to
+// silently clean up versus what must stay untouched.
+export function buildTranscriptAnalysisPrompt({ title, transcript, sourceUrl, level, sourceLabel, artifactNote }) {
   const paragraphCount = estimateParagraphCount(countWords(transcript))
   const perGroup = paragraphCount * QUESTIONS_PER_PARAGRAPH
   const total = perGroup * 3
@@ -27,11 +33,11 @@ export function buildBbcAnalysisPrompt({ title, transcript, sourceUrl, level }) 
 
   return `You are an expert academic English content creator for Turkish university students preparing for English proficiency exams (BUEPT, IELTS, TOEFL).
 
-You are given a REAL transcript from a BBC Learning English episode (source: ${sourceUrl}). Do NOT rewrite, paraphrase, shorten, or invent any part of the dialogue — copy it into "transcript"/"paragraphs" exactly as given, fixing only obvious PDF-extraction artifacts (stray spacing, a misplaced character) without changing any actual words or meaning. Your job is to analyze this real transcript and build supporting study materials around it, the same way you would for a passage you wrote yourself.
+You are given a REAL transcript from a ${sourceLabel} (source: ${sourceUrl}). Do NOT rewrite, paraphrase, shorten, or invent any part of it — copy it into "transcript"/"paragraphs" exactly as given, fixing only ${artifactNote} without changing any actual words or meaning. Your job is to analyze this real transcript and build supporting study materials around it, the same way you would for a passage you wrote yourself.
 
 Do NOT paraphrase or summarize any individual sentence anywhere in "transcript" or "paragraphs" — every paragraph's "text" must be an exact, verbatim slice of the real transcript, just regrouped into ${paragraphCount} chunks.
 
-Episode title: "${title}"
+Title: "${title}"
 Target level: ${level} (CEFR) — pitch vocabulary/grammar explanations at this level even though the transcript's own difficulty is fixed.
 
 Transcript:
@@ -41,8 +47,8 @@ ${transcript}
 
 Return ONLY a valid JSON object with this exact structure:
 {
-  "title": "a clean, short title for this material (reuse or lightly tidy the episode title)",
-  "transcript": "the transcript above, verbatim, split into paragraphs separated by \\n\\n — group consecutive speaker turns into roughly ${paragraphCount} paragraphs by topic/scene shift, not one paragraph per turn",
+  "title": "a clean, short title for this material (reuse or lightly tidy the given title)",
+  "transcript": "the transcript above, verbatim, split into paragraphs separated by \\n\\n — group it into roughly ${paragraphCount} paragraphs by topic/scene shift",
   "summary": "a concise ~10-sentence summary of the transcript's key points, written as flowing natural prose (not a bullet list) — short enough to double as model material for speaking (read-aloud/shadowing) or writing practice on this topic",
   "paragraphs": [
     { "text": "paragraph 1 — an exact, verbatim slice of the transcript above, not a paraphrase or summary" }

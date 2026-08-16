@@ -13,6 +13,7 @@ import cors from 'cors'
 import { Communicate } from 'edge-tts-universal'
 import * as store from './store.js'
 import * as bbc from './bbc.js'
+import * as youtube from './youtube.js'
 
 const PORT = process.env.PORT || 5175
 
@@ -169,6 +170,26 @@ app.post('/api/bbc/audio/:materialId', asyncRoute(async (req, res) => {
   if (!mp3Url) return res.status(400).json({ error: '"mp3Url" is required.' })
   const buffer = await bbc.fetchAudioBuffer(mp3Url)
   await store.saveAudioBlob(Number(req.params.materialId), buffer, 'bbc', 'bbc')
+  res.json({ ok: true })
+}))
+
+// ---------- YouTube Content import ----------
+// Same two-step shape as BBC: fetch+parse the transcript first (cheap, text
+// only) so the client can preview it before spending an AI call, then
+// download the audio separately once a material exists to attach it to. See
+// youtube.js for why this needs yt-dlp rather than a pure-JS fetch.
+
+app.post('/api/youtube/import', asyncRoute(async (req, res) => {
+  const { url } = req.body || {}
+  if (!url) return res.status(400).json({ error: '"url" is required.' })
+  res.json(await youtube.fetchYoutubeVideoMeta(url))
+}))
+
+app.post('/api/youtube/audio/:materialId', asyncRoute(async (req, res) => {
+  const { sourceUrl } = req.body || {}
+  if (!sourceUrl) return res.status(400).json({ error: '"sourceUrl" is required.' })
+  const buffer = await youtube.fetchYoutubeAudioBuffer(sourceUrl)
+  await store.saveAudioBlob(Number(req.params.materialId), buffer, 'youtube', 'youtube')
   res.json({ ok: true })
 }))
 

@@ -7,6 +7,7 @@ import { renderSettings, applyTheme, applyAccent } from './modules/settings.js'
 import { renderGenerator } from './modules/generator.js'
 import { renderContentStudio } from './modules/content-studio.js'
 import { renderBbcContent } from './modules/bbc-content.js'
+import { renderYoutubeContent } from './modules/youtube-content.js'
 import { renderWorkspace } from './modules/workspace.js'
 import { renderLibrary } from './modules/library.js'
 import { renderDashboard } from './modules/dashboard.js'
@@ -20,6 +21,7 @@ const ROUTES = {
   generator: renderGenerator,
   'content-studio': renderContentStudio,
   'bbc-content': renderBbcContent,
+  'youtube-content': renderYoutubeContent,
   library: renderLibrary,
   statistics: renderStatistics,
   settings: renderSettings,
