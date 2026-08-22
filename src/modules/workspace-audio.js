@@ -172,7 +172,7 @@ function playQuickPcm(pcmBytes, sampleRate, rate) {
 // swaps it for the real label once the audio itself has actually
 // downloaded. When more than one track is cached (Cloud + Edge), a
 // switcher lets the user pick which one plays without regenerating.
-export function renderAudioSection(audioTracks, defaultSpeed = 1) {
+export function renderAudioSection(audioTracks, defaultSpeed = 1, sourceUrl = '') {
   const { tracks = [], defaultKind } = audioTracks || {}
   if (defaultKind !== undefined) {
     const current = tracks.find((t) => (t.kind || null) === (defaultKind || null))
@@ -193,20 +193,35 @@ export function renderAudioSection(audioTracks, defaultSpeed = 1) {
       ${audioPlayerHTML(defaultSpeed)}
     `
   }
+  const listenLabel = sourceLabel(sourceUrl)
   return `
     <div class="banner warning" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
-      <span>No real audio generated for this material yet. You can listen with your browser's voice below, or generate real audio now.</span>
+      <span>No real audio generated for this material yet.${listenLabel ? '' : " You can listen with your browser's voice below, or generate real audio now."}</span>
       <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        ${listenLabel ? `<a class="btn primary" href="${escapeAttr(sourceUrl)}" target="_blank" rel="noopener">▶ Listen on ${listenLabel}</a>` : ''}
         <select id="ws-engine-select" title="Which engine(s) to generate with">
           <option value="both">Cloud + Edge (both)</option>
           <option value="edge">Edge TTS only — fast, no Google quota</option>
           <option value="cloud">Google Cloud TTS only</option>
         </select>
-        <button class="btn primary" id="ws-generate-speech">🔊 Generate Speech</button>
+        <button class="btn ${listenLabel ? 'ghost' : 'primary'}" id="ws-generate-speech">🔊 Generate Speech</button>
       </div>
     </div>
     ${audioPlayerHTML(defaultSpeed)}
   `
+}
+
+// Real-audio download can fail — YouTube in particular has started blocking
+// downloads (though not page/caption access) from datacenter IPs like the
+// deployed server's, independent of anything wrong with the material itself
+// — so when there's a source video/page to fall back to, offer a direct
+// link to it as the primary way to listen, rather than defaulting straight
+// to browser TTS as if that were the only option.
+function sourceLabel(sourceUrl) {
+  if (!sourceUrl) return ''
+  if (/youtube\.com|youtu\.be/.test(sourceUrl)) return 'YouTube'
+  if (/bbc\.co\.uk/.test(sourceUrl)) return 'BBC'
+  return 'the original page'
 }
 
 export function destroyAudioPlayer() {
@@ -387,4 +402,7 @@ function highlightSentence(root, index) {
 
 function escapeHtml(str) {
   return String(str).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c])
+}
+function escapeAttr(str) {
+  return String(str).replace(/"/g, '&quot;')
 }

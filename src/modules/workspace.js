@@ -46,7 +46,7 @@ export async function renderWorkspace(container, materialId) {
         <button class="icon-btn" id="ws-favorite" aria-label="Toggle favorite">${material.isFavorite ? '★' : '☆'}</button>
       </header>
       <main class="ws-main">
-        ${hasAudioMode(material.mode) ? `<div class="ws-main-audio">${renderAudioSection(audioTracks, defaultSpeed)}</div>` : ''}
+        ${hasAudioMode(material.mode) ? `<div class="ws-main-audio">${renderAudioSection(audioTracks, defaultSpeed, material.sourceUrl)}</div>` : ''}
         <div class="tabs" id="ws-tabs">
           ${tabIds()
             .map((t) => `<button data-tab="${t}" class="${t === activeTab ? 'active' : ''}">${tabLabel(t)}</button>`)
