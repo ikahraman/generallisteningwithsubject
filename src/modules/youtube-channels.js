@@ -1,9 +1,9 @@
-// YouTube Channels: add a playlist (one CEFR level per playlist — the
-// premise being a curated playlist is already homogeneous in difficulty),
-// see its videos as a checklist, then batch-generate study material for
-// whichever ones are checked. Per-video generation reuses the exact same
-// pipeline as youtube-content.js (single-video import) — this page is just
-// a checklist wrapper that calls it once per selected video, sequentially.
+// YouTube Channels: a top-level list of added playlists ("channels" here
+// really means "an added playlist" — see server/youtube.js), each opened
+// into its own page showing that playlist's videos as a checklist. Checking
+// videos and hitting "Generate Selected" batch-generates study material for
+// them, reusing the exact same pipeline as youtube-content.js (single-video
+// import) one video at a time, sequentially.
 import { getSetting, addMaterial, addChannel, getAllChannels, deleteChannel, updateChannelVideo, importYoutubeVideo, saveYoutubeAudio } from '../db.js'
 import { generateMaterialJSON } from '../api/gemini.js'
 import { parseGeminiMaterialJSON } from '../utils/validators.js'
@@ -13,10 +13,12 @@ import { openModal } from '../components/modal.js'
 
 const LEVELS = ['A1+', 'A2', 'B1', 'B2', 'C1', 'C2']
 const YOUTUBE_MODE = 'careful'
-const STORAGE_KEY = 'yt-channels-view-mode'
+const CHANNEL_VIEW_KEY = 'yt-channels-list-view-mode'
+const VIDEO_VIEW_KEY = 'yt-channels-video-view-mode'
 
 let channels = []
-let viewMode = localStorage.getItem(STORAGE_KEY) === 'detail' ? 'detail' : 'list'
+let channelViewMode = localStorage.getItem(CHANNEL_VIEW_KEY) === 'detail' ? 'detail' : 'list'
+let videoViewMode = localStorage.getItem(VIDEO_VIEW_KEY) === 'detail' ? 'detail' : 'list'
 let newUrl = ''
 let newLevel = 'B1'
 let isAddingChannel = false
@@ -33,18 +35,17 @@ let generateProgress = '' // e.g. "3/12: <title>"
 // otherwise re-checkable, or it would be stuck forever with no way to retry.
 let activeKey = null
 
+// ---------- top-level: list of added playlists ----------
+
 export async function renderYoutubeChannels(container) {
-  const apiKey = await getSetting('geminiApiKey', '')
   channels = await getAllChannels()
 
   container.innerHTML = `
     <div class="page">
       <h1 class="section-title">YouTube Channels</h1>
       <p class="card-hint" style="margin-bottom: var(--space-6);">
-        Add a playlist link and its videos show up below as a checklist. Check the ones you want, then generate study material for all of them in one go — same real transcript + real audio pipeline as YouTube Content, one playlist at a time.
+        Add a playlist link below. Open it to see its videos as a checklist, check the ones you want, and generate study material for all of them in one go — same real transcript + real audio pipeline as YouTube Content.
       </p>
-
-      ${!apiKey ? `<div class="banner warning">No Gemini API key set. <a href="#/settings">Add one in Settings</a> to generate material.</div>` : ''}
 
       <div class="card">
         <div class="field row">
@@ -65,48 +66,197 @@ export async function renderYoutubeChannels(container) {
         </button>
       </div>
 
-      ${channels.length ? topbarHTML(apiKey) : ''}
-      ${channels.map(channelSectionHTML).join('') || '<p class="card-hint">No playlists added yet.</p>'}
+      ${
+        channels.length
+          ? `<div class="segmented" data-group="ytc-channel-view" style="margin-bottom: var(--space-4);">
+              <button data-value="list" class="${channelViewMode === 'list' ? 'active' : ''}">List</button>
+              <button data-value="detail" class="${channelViewMode === 'detail' ? 'active' : ''}">Detailed</button>
+            </div>`
+          : ''
+      }
+      ${channelViewMode === 'list' ? channelListHTML() : channelGridHTML()}
+      ${!channels.length ? '<p class="card-hint">No playlists added yet.</p>' : ''}
     </div>
   `
 
-  wireEvents(container)
+  wireTopLevelEvents(container)
 }
 
-function topbarHTML(apiKey) {
-  const count = selected.size
+function channelProgress(channel) {
+  const done = channel.videos.filter((v) => v.status === 'done').length
+  return { done, total: channel.videos.length }
+}
+
+function channelListHTML() {
   return `
-    <div class="row" style="justify-content:space-between; align-items:center; margin-bottom: var(--space-4); flex-wrap:wrap; gap:10px;">
-      <div class="segmented" data-group="ytc-view">
-        <button data-value="list" class="${viewMode === 'list' ? 'active' : ''}">List</button>
-        <button data-value="detail" class="${viewMode === 'detail' ? 'active' : ''}">Detailed</button>
+    <div class="card">
+      <div style="display:flex; flex-direction:column; gap:2px;">
+        ${channels.map(channelRowHTML).join('')}
       </div>
-      <button class="btn primary" id="ytc-generate" ${!count || isGenerating || !apiKey ? 'disabled' : ''}>
-        ${isGenerating ? spinnerHTML() + (generateProgress || 'Generating…') : `Generate Selected${count ? ` (${count})` : ''}`}
-      </button>
     </div>
   `
 }
 
-function channelSectionHTML(channel) {
+function channelRowHTML(channel) {
+  const { done, total } = channelProgress(channel)
+  const cover = channel.videos[0]?.thumbnail
   return `
-    <div class="card" data-channel="${channel.id}">
-      <div class="row" style="justify-content:space-between; align-items:center;">
-        <h2 class="card-title">${escapeHtml(channel.title)}</h2>
+    <div class="row" data-channel-link="${channel.id}" style="align-items:center; gap:10px; padding:8px 4px; border-radius:6px; cursor:pointer;">
+      ${cover ? `<img src="${escapeAttr(cover)}" alt="" style="width:64px; height:36px; object-fit:cover; border-radius:4px; flex-shrink:0;" />` : ''}
+      <span style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600;">${escapeHtml(channel.title)}</span>
+      <span class="badge level">${channel.level}</span>
+      <span class="badge">${total} videos</span>
+      <span class="badge" title="Study materials generated so far">${done}/${total} generated</span>
+      <button class="icon-btn" data-delete-channel="${channel.id}" title="Remove playlist" aria-label="Remove playlist">🗑</button>
+    </div>
+  `
+}
+
+function channelGridHTML() {
+  return `<div class="lib-grid">${channels.map(channelCardHTML).join('')}</div>`
+}
+
+function channelCardHTML(channel) {
+  const { done, total } = channelProgress(channel)
+  const cover = channel.videos[0]?.thumbnail
+  return `
+    <div class="material-card" data-channel-link="${channel.id}" style="cursor:pointer;">
+      <div class="card-top-row">
+        <span class="badge level">${channel.level}</span>
+        <button class="icon-btn" data-delete-channel="${channel.id}" title="Remove playlist" aria-label="Remove playlist">🗑</button>
+      </div>
+      ${cover ? `<img src="${escapeAttr(cover)}" alt="" style="width:100%; aspect-ratio:16/9; object-fit:cover; border-radius:6px; margin:6px 0;" />` : ''}
+      <h3 class="card-title-sm">${escapeHtml(channel.title)}</h3>
+      <p class="card-meta">${total} videos · ${done}/${total} generated</p>
+    </div>
+  `
+}
+
+function wireTopLevelEvents(root) {
+  root.querySelector('#ytc-url')?.addEventListener('input', (e) => (newUrl = e.target.value))
+  root.querySelector('#ytc-level')?.addEventListener('change', (e) => (newLevel = e.target.value))
+  root.querySelector('#ytc-add')?.addEventListener('click', () => handleAddChannel(root))
+
+  root.querySelectorAll('[data-group="ytc-channel-view"] button').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      channelViewMode = btn.dataset.value
+      localStorage.setItem(CHANNEL_VIEW_KEY, channelViewMode)
+      renderYoutubeChannels(root)
+    })
+  })
+
+  root.querySelectorAll('[data-delete-channel]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation()
+      confirmDeleteChannel(root, Number(btn.dataset.deleteChannel), () => renderYoutubeChannels(root))
+    })
+  })
+
+  root.querySelectorAll('[data-channel-link]').forEach((el) => {
+    el.addEventListener('click', () => {
+      location.hash = `#/youtube-channels/${el.dataset.channelLink}`
+    })
+  })
+}
+
+async function handleAddChannel(root) {
+  if (!newUrl.trim()) {
+    addError = 'Please paste a playlist URL first.'
+    return renderYoutubeChannels(root)
+  }
+  isAddingChannel = true
+  addError = ''
+  await renderYoutubeChannels(root)
+
+  try {
+    await addChannel(newUrl.trim(), newLevel)
+    newUrl = ''
+  } catch (err) {
+    addError = err.message || 'Could not read that playlist.'
+  } finally {
+    isAddingChannel = false
+    await renderYoutubeChannels(root)
+  }
+}
+
+function confirmDeleteChannel(root, channelId, onDeleted) {
+  const channel = channels.find((c) => c.id === channelId)
+  openModal({
+    title: 'Remove Playlist?',
+    bodyHTML: `<p>"${escapeHtml(channel?.title || '')}" will be removed from this list. Materials you've already generated from it are kept — only the checklist itself is removed.</p>`,
+    actions: [
+      { label: 'Cancel', variant: 'ghost' },
+      {
+        label: 'Remove',
+        variant: 'danger',
+        onClick: async () => {
+          await deleteChannel(channelId)
+          for (const key of [...selected]) {
+            if (key.startsWith(`${channelId}:`)) selected.delete(key)
+          }
+          await onDeleted()
+        },
+      },
+    ],
+  })
+}
+
+// ---------- detail: one playlist's videos as a checklist ----------
+
+export async function renderYoutubeChannelDetail(container, channelId) {
+  const apiKey = await getSetting('geminiApiKey', '')
+  channels = await getAllChannels()
+  const channel = channels.find((c) => c.id === channelId)
+
+  if (!channel) {
+    container.innerHTML = `
+      <div class="page">
+        <a class="btn ghost" href="#/youtube-channels">&larr; All Channels</a>
+        <p class="card-hint" style="margin-top:12px;">That playlist isn't in your list any more.</p>
+      </div>
+    `
+    return
+  }
+
+  const { done, total } = channelProgress(channel)
+  const count = selected.size
+
+  container.innerHTML = `
+    <div class="page">
+      <a class="btn ghost" href="#/youtube-channels">&larr; All Channels</a>
+      <div class="row" style="justify-content:space-between; align-items:center; margin-top:12px; flex-wrap:wrap; gap:10px;">
+        <h1 class="section-title" style="margin-bottom:0;">${escapeHtml(channel.title)}</h1>
         <div class="row" style="gap:8px;">
           <span class="badge level">${channel.level}</span>
-          <span class="badge">${channel.videos.length} videos</span>
-          <button class="icon-btn" data-delete-channel="${channel.id}" title="Remove playlist" aria-label="Remove playlist">🗑</button>
+          <span class="badge">${total} videos</span>
+          <span class="badge">${done}/${total} generated</span>
         </div>
       </div>
-      ${viewMode === 'list' ? videoListHTML(channel) : videoGridHTML(channel)}
+
+      ${!apiKey ? `<div class="banner warning" style="margin-top:12px;">No Gemini API key set. <a href="#/settings">Add one in Settings</a> to generate material.</div>` : ''}
+
+      <div class="row" style="justify-content:space-between; align-items:center; margin:var(--space-4) 0; flex-wrap:wrap; gap:10px;">
+        <div class="segmented" data-group="ytc-video-view">
+          <button data-value="list" class="${videoViewMode === 'list' ? 'active' : ''}">List</button>
+          <button data-value="detail" class="${videoViewMode === 'detail' ? 'active' : ''}">Detailed</button>
+        </div>
+        <button class="btn primary" id="ytc-generate" ${!count || isGenerating || !apiKey ? 'disabled' : ''}>
+          ${isGenerating ? spinnerHTML() + (generateProgress || 'Generating…') : `Generate Selected${count ? ` (${count})` : ''}`}
+        </button>
+      </div>
+
+      <div class="card">
+        ${videoViewMode === 'list' ? videoListHTML(channel) : videoGridHTML(channel)}
+      </div>
     </div>
   `
+
+  wireDetailEvents(container, channelId)
 }
 
 function videoListHTML(channel) {
   return `
-    <div style="display:flex; flex-direction:column; gap:2px; margin-top:10px;">
+    <div style="display:flex; flex-direction:column; gap:2px;">
       ${channel.videos.map((v) => videoRowHTML(channel, v)).join('')}
     </div>
   `
@@ -129,7 +279,7 @@ function videoRowHTML(channel, v) {
 
 function videoGridHTML(channel) {
   return `
-    <div class="lib-grid" style="margin-top:10px;">
+    <div class="lib-grid">
       ${channel.videos.map((v) => videoCardHTML(channel, v)).join('')}
     </div>
   `
@@ -160,24 +310,16 @@ function statusBadgeHTML(v, isActive) {
   return ''
 }
 
-function wireEvents(root) {
-  root.querySelector('#ytc-url')?.addEventListener('input', (e) => (newUrl = e.target.value))
-  root.querySelector('#ytc-level')?.addEventListener('change', (e) => (newLevel = e.target.value))
-  root.querySelector('#ytc-add')?.addEventListener('click', () => handleAddChannel(root))
-
-  root.querySelectorAll('[data-group="ytc-view"] button').forEach((btn) => {
+function wireDetailEvents(root, channelId) {
+  root.querySelectorAll('[data-group="ytc-video-view"] button').forEach((btn) => {
     btn.addEventListener('click', () => {
-      viewMode = btn.dataset.value
-      localStorage.setItem(STORAGE_KEY, viewMode)
-      renderYoutubeChannels(root)
+      videoViewMode = btn.dataset.value
+      localStorage.setItem(VIDEO_VIEW_KEY, videoViewMode)
+      renderYoutubeChannelDetail(root, channelId)
     })
   })
 
-  root.querySelector('#ytc-generate')?.addEventListener('click', () => handleGenerateSelected(root))
-
-  root.querySelectorAll('[data-delete-channel]').forEach((btn) => {
-    btn.addEventListener('click', () => confirmDeleteChannel(root, Number(btn.dataset.deleteChannel)))
-  })
+  root.querySelector('#ytc-generate')?.addEventListener('click', () => handleGenerateSelected(root, channelId))
 
   root.querySelectorAll('[data-video]').forEach((cb) => {
     cb.addEventListener('change', () => {
@@ -186,67 +328,25 @@ function wireEvents(root) {
       else selected.delete(key)
       // Only the generate button's enabled/count state needs refreshing —
       // a full re-render here would fight the checkbox's own native toggle.
-      const bar = root.querySelector('#ytc-generate')
-      if (bar) {
-        bar.disabled = !selected.size || isGenerating
-        bar.textContent = `Generate Selected${selected.size ? ` (${selected.size})` : ''}`
+      const btn = root.querySelector('#ytc-generate')
+      if (btn) {
+        btn.disabled = !selected.size || isGenerating
+        btn.textContent = `Generate Selected${selected.size ? ` (${selected.size})` : ''}`
       }
     })
   })
 }
 
-async function handleAddChannel(root) {
-  if (!newUrl.trim()) {
-    addError = 'Please paste a playlist URL first.'
-    return renderYoutubeChannels(root)
-  }
-  isAddingChannel = true
-  addError = ''
-  await renderYoutubeChannels(root)
-
-  try {
-    await addChannel(newUrl.trim(), newLevel)
-    newUrl = ''
-  } catch (err) {
-    addError = err.message || 'Could not read that playlist.'
-  } finally {
-    isAddingChannel = false
-    await renderYoutubeChannels(root)
-  }
-}
-
-function confirmDeleteChannel(root, channelId) {
-  const channel = channels.find((c) => c.id === channelId)
-  openModal({
-    title: 'Remove Playlist?',
-    bodyHTML: `<p>"${escapeHtml(channel?.title || '')}" will be removed from this list. Materials you've already generated from it are kept — only the checklist itself is removed.</p>`,
-    actions: [
-      { label: 'Cancel', variant: 'ghost' },
-      {
-        label: 'Remove',
-        variant: 'danger',
-        onClick: async () => {
-          await deleteChannel(channelId)
-          for (const key of [...selected]) {
-            if (key.startsWith(`${channelId}:`)) selected.delete(key)
-          }
-          await renderYoutubeChannels(root)
-        },
-      },
-    ],
-  })
-}
-
 // ---------- batch generation ----------
 
-async function handleGenerateSelected(root) {
+async function handleGenerateSelected(root, channelId) {
   const apiKey = await getSetting('geminiApiKey', '')
   if (!apiKey) return
 
   const queue = [...selected]
     .map((key) => {
-      const [channelId, videoId] = [Number(key.split(':')[0]), key.slice(key.indexOf(':') + 1)]
-      const channel = channels.find((c) => c.id === channelId)
+      const [cId, videoId] = [Number(key.split(':')[0]), key.slice(key.indexOf(':') + 1)]
+      const channel = channels.find((c) => c.id === cId)
       const video = channel?.videos.find((v) => v.videoId === videoId)
       return channel && video ? { channel, video } : null
     })
@@ -261,7 +361,7 @@ async function handleGenerateSelected(root) {
     selected.delete(key)
     activeKey = key
     video.status = 'generating'
-    await renderYoutubeChannels(root)
+    await renderYoutubeChannelDetail(root, channelId)
     await updateChannelVideo(channel.id, video.videoId, { status: 'generating' })
 
     try {
@@ -276,11 +376,11 @@ async function handleGenerateSelected(root) {
     } finally {
       activeKey = null
     }
-    await renderYoutubeChannels(root)
+    await renderYoutubeChannelDetail(root, channelId)
   }
   isGenerating = false
   generateProgress = ''
-  await renderYoutubeChannels(root)
+  await renderYoutubeChannelDetail(root, channelId)
 }
 
 // Same steps as youtube-content.js's handleGenerate, minus the UI/preview

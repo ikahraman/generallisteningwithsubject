@@ -8,7 +8,7 @@ import { renderGenerator } from './modules/generator.js'
 import { renderContentStudio } from './modules/content-studio.js'
 import { renderBbcContent } from './modules/bbc-content.js'
 import { renderYoutubeContent } from './modules/youtube-content.js'
-import { renderYoutubeChannels } from './modules/youtube-channels.js'
+import { renderYoutubeChannels, renderYoutubeChannelDetail } from './modules/youtube-channels.js'
 import { renderWorkspace } from './modules/workspace.js'
 import { renderLibrary } from './modules/library.js'
 import { renderDashboard } from './modules/dashboard.js'
@@ -33,6 +33,8 @@ function parseHash() {
   const hash = location.hash.replace('#/', '')
   const workspaceMatch = hash.match(/^workspace\/(\d+)$/)
   if (workspaceMatch) return { route: 'workspace', materialId: Number(workspaceMatch[1]) }
+  const channelMatch = hash.match(/^youtube-channels\/(\d+)$/)
+  if (channelMatch) return { route: 'youtube-channel-detail', channelId: Number(channelMatch[1]) }
   return { route: ROUTES[hash] ? hash : 'dashboard' }
 }
 
@@ -47,14 +49,20 @@ function closeMobileSidebar() {
 
 async function render() {
   closeMobileSidebar()
-  const { route, materialId } = parseHash()
+  const { route, materialId, channelId } = parseHash()
   const sidebarEl = document.querySelector('#app-sidebar')
-  sidebarEl.innerHTML = sidebarHTML(route === 'workspace' ? null : route)
+  // The channel-detail page is a drill-down from "YouTube Channels", same
+  // relationship workspace has to its own list pages — so it highlights the
+  // same sidebar item rather than nothing.
+  const sidebarActive = route === 'workspace' ? null : route === 'youtube-channel-detail' ? 'youtube-channels' : route
+  sidebarEl.innerHTML = sidebarHTML(sidebarActive)
   wireSidebar(sidebarEl)
 
   const app = document.querySelector('#app')
   if (route === 'workspace') {
     await renderWorkspace(app, materialId)
+  } else if (route === 'youtube-channel-detail') {
+    await renderYoutubeChannelDetail(app, channelId)
   } else {
     await ROUTES[route](app)
   }
