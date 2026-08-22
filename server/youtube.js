@@ -22,6 +22,7 @@ const execFileAsync = promisify(execFile)
 const YTDLP_TIMEOUT_MS = 30000
 const YTDLP_MAX_BUFFER = 20 * 1024 * 1024
 const YTDLP_AUDIO_TIMEOUT_MS = 180000
+const YTDLP_PLAYLIST_TIMEOUT_MS = 60000
 // Plain "yt-dlp" resolves via PATH for local dev (however it got installed —
 // pip, a standalone binary, whatever). On the VDS it lives inside a
 // dedicated venv (not on the systemd service's PATH), so deploy sets
@@ -37,6 +38,58 @@ export function isYoutubeUrl(url) {
     return false
   } catch {
     return false
+  }
+}
+
+// Accepts any URL carrying a "list=" param — a bare playlist URL, or (as
+// YouTube's own "Share" button produces) a specific video's watch URL with
+// the playlist attached — and normalizes both to the canonical playlist URL,
+// since a single-video URL would otherwise import just that one video.
+export function extractPlaylistId(url) {
+  try {
+    return new URL(url).searchParams.get('list') || null
+  } catch {
+    return null
+  }
+}
+
+// Flat listing (no per-video caption/format resolution, just id/title/
+// thumbnail/duration) — fast even for a large playlist, since "YouTube
+// Channels" only needs enough to render a checklist; each video's real
+// transcript/audio is resolved individually, later, only for the ones the
+// user actually checks and generates.
+export async function fetchPlaylistVideos(url) {
+  const playlistId = extractPlaylistId(url)
+  if (!playlistId) throw new Error("That doesn't look like a YouTube playlist URL (no \"list=\" parameter).")
+  const canonicalUrl = `https://www.youtube.com/playlist?list=${playlistId}`
+
+  let stdout
+  try {
+    ;({ stdout } = await execFileAsync(YTDLP_BIN, ['--flat-playlist', '--dump-single-json', '--no-warnings', canonicalUrl], {
+      timeout: YTDLP_PLAYLIST_TIMEOUT_MS,
+      maxBuffer: YTDLP_MAX_BUFFER,
+    }))
+  } catch (err) {
+    if (err.code === 'ENOENT') throw new Error('yt-dlp is not installed on the server.')
+    if (err.killed) throw new Error('Timed out reading that playlist (yt-dlp took too long).')
+    console.error('[youtube] flat-playlist failed:', err.stderr || err.message)
+    throw new Error('Could not read that playlist — it may be private, empty, or unavailable.')
+  }
+
+  const info = JSON.parse(stdout)
+  const entries = (info.entries || []).filter((e) => e.id)
+  if (!entries.length) throw new Error('That playlist has no videos.')
+
+  return {
+    playlistId,
+    title: info.title || 'Untitled playlist',
+    sourceUrl: canonicalUrl,
+    videos: entries.map((e) => ({
+      videoId: e.id,
+      title: e.title || e.id,
+      thumbnail: `https://i.ytimg.com/vi/${e.id}/hqdefault.jpg`,
+      duration: typeof e.duration === 'number' ? e.duration : null,
+    })),
   }
 }
 

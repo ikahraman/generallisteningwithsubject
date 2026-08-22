@@ -268,6 +268,45 @@ export async function saveYoutubeAudio(materialId, sourceUrl) {
   if (!res.ok) throw new Error(await extractError(res))
 }
 
+// ---------- YouTube Channels (playlist checklists) ----------
+// Listing a playlist's videos is its own yt-dlp call (see server/youtube.js's
+// fetchPlaylistVideos) — same "can legitimately be slow" reasoning as the
+// pair above, so it gets its own timeout rather than going through the
+// generic request() helper. Everything else here (list/delete channels,
+// update one video's status) is a fast local JSON read/write, so those stay
+// on request().
+
+const CHANNEL_IMPORT_TIMEOUT_MS = 65000
+
+export async function addChannel(url, level) {
+  let res
+  try {
+    res = await fetchWithToken(`${SERVER_URL}/api/channels`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, level }),
+      signal: AbortSignal.timeout(CHANNEL_IMPORT_TIMEOUT_MS),
+    })
+  } catch (err) {
+    if (err.name === 'TimeoutError') throw new Error(`Timed out reading that playlist after ${CHANNEL_IMPORT_TIMEOUT_MS / 1000}s.`)
+    throw new Error('Library server is not reachable — is it running? (npm start inside server/)')
+  }
+  if (!res.ok) throw new Error(await extractError(res))
+  return res.json()
+}
+
+export function getAllChannels() {
+  return request('GET', '/api/channels')
+}
+
+export function deleteChannel(id) {
+  return request('DELETE', `/api/channels/${id}`)
+}
+
+export function updateChannelVideo(channelId, videoId, changes) {
+  return request('PATCH', `/api/channels/${channelId}/videos/${encodeURIComponent(videoId)}`, changes)
+}
+
 // ---------- bulk data (export/import, Settings module) ----------
 
 export function exportAllData() {

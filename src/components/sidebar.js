@@ -4,6 +4,7 @@ const NAV_ITEMS = [
   { id: 'content-studio', label: 'Content Studio', icon: '🛠️' },
   { id: 'bbc-content', label: 'BBC Content', icon: '📻' },
   { id: 'youtube-content', label: 'YouTube Content', icon: '▶️' },
+  { id: 'youtube-channels', label: 'YouTube Channels', icon: '📺' },
   { id: 'library', label: 'Library', icon: '📚' },
   { id: 'statistics', label: 'Statistics', icon: '📊' },
   { id: 'settings', label: 'Settings', icon: '⚙️' },

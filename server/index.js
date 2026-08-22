@@ -193,6 +193,36 @@ app.post('/api/youtube/audio/:materialId', asyncRoute(async (req, res) => {
   res.json({ ok: true })
 }))
 
+// ---------- YouTube Channels (playlist checklists) ----------
+// A "channel" here is really an added playlist plus its flat video listing
+// (see youtube.js's fetchPlaylistVideos) — the per-video transcript/audio/
+// material generation reuses the exact same /api/youtube/import and
+// /api/youtube/audio routes above, one video at a time, from the client;
+// these routes only manage the checklist itself and each video's status.
+
+app.post('/api/channels', asyncRoute(async (req, res) => {
+  const { url, level } = req.body || {}
+  if (!url) return res.status(400).json({ error: '"url" is required.' })
+  if (!level) return res.status(400).json({ error: '"level" is required.' })
+  const playlist = await youtube.fetchPlaylistVideos(url)
+  const id = await store.addChannel({ url: playlist.sourceUrl, title: playlist.title, level, videos: playlist.videos })
+  res.json(await store.getAllChannels().then((all) => all.find((c) => c.id === id)))
+}))
+
+app.get('/api/channels', asyncRoute(async (req, res) => {
+  res.json(await store.getAllChannels())
+}))
+
+app.delete('/api/channels/:id', asyncRoute(async (req, res) => {
+  await store.deleteChannel(Number(req.params.id))
+  res.json({ ok: true })
+}))
+
+app.patch('/api/channels/:channelId/videos/:videoId', asyncRoute(async (req, res) => {
+  await store.updateChannelVideo(Number(req.params.channelId), req.params.videoId, req.body || {})
+  res.json({ ok: true })
+}))
+
 // Edge's backend is unofficial and can stall mid-stream instead of erroring
 // — without a hard cap, that hangs this request (and the client's own
 // timeout is a separate, later line of defense, not a substitute: a

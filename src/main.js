@@ -8,6 +8,7 @@ import { renderGenerator } from './modules/generator.js'
 import { renderContentStudio } from './modules/content-studio.js'
 import { renderBbcContent } from './modules/bbc-content.js'
 import { renderYoutubeContent } from './modules/youtube-content.js'
+import { renderYoutubeChannels } from './modules/youtube-channels.js'
 import { renderWorkspace } from './modules/workspace.js'
 import { renderLibrary } from './modules/library.js'
 import { renderDashboard } from './modules/dashboard.js'
@@ -22,6 +23,7 @@ const ROUTES = {
   'content-studio': renderContentStudio,
   'bbc-content': renderBbcContent,
   'youtube-content': renderYoutubeContent,
+  'youtube-channels': renderYoutubeChannels,
   library: renderLibrary,
   statistics: renderStatistics,
   settings: renderSettings,

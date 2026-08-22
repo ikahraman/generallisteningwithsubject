@@ -16,7 +16,7 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data')
 const LIBRARY_FILE = path.join(DATA_DIR, 'library.json')
 const AUDIO_DIR = path.join(DATA_DIR, 'audio')
 
-const EMPTY_LIBRARY = { materials: [], folders: [], tags: [], settings: [], studyLog: [], audioMeta: [], seq: {} }
+const EMPTY_LIBRARY = { materials: [], folders: [], tags: [], settings: [], studyLog: [], audioMeta: [], channels: [], seq: {} }
 
 // Concurrent requests (e.g. two devices saving at once) must not interleave
 // read-modify-write cycles on the same file, so every mutation is queued
@@ -210,6 +210,54 @@ export function deleteTag(id) {
   })
 }
 
+// ---------- channels (YouTube Channels: added playlists + their videos) ----------
+// One row per added playlist. `videos` is embedded (not a separate
+// collection) since it's always read/written as a whole with its parent —
+// there's no cross-channel query need that would justify normalizing it out.
+
+export function addChannel({ url, title, level, videos }) {
+  return serialize(async () => {
+    const lib = await readLibrary()
+    const row = {
+      id: nextId(lib, 'channels'),
+      url,
+      title,
+      level,
+      createdAt: new Date().toISOString(),
+      videos: videos.map((v) => ({ status: 'pending', materialId: null, error: null, ...v })),
+    }
+    lib.channels.push(row)
+    await writeLibrary(lib)
+    return row.id
+  })
+}
+
+export async function getAllChannels() {
+  return (await readLibrary()).channels
+}
+
+export function deleteChannel(id) {
+  return serialize(async () => {
+    const lib = await readLibrary()
+    lib.channels = lib.channels.filter((c) => c.id !== id)
+    await writeLibrary(lib)
+  })
+}
+
+// Used to record each video's progress (pending -> generating -> done/error)
+// as a batch generation run works through a channel's checked videos, one at
+// a time, so the page shows live status and reloading mid-batch doesn't lose it.
+export function updateChannelVideo(channelId, videoId, changes) {
+  return serialize(async () => {
+    const lib = await readLibrary()
+    const channel = lib.channels.find((c) => c.id === channelId)
+    const video = channel?.videos.find((v) => v.videoId === videoId)
+    if (!video) return
+    Object.assign(video, changes)
+    await writeLibrary(lib)
+  })
+}
+
 // ---------- audio cache ----------
 
 export function saveAudioBlob(materialId, buffer, engine, kind) {
@@ -308,6 +356,7 @@ export async function exportAllData() {
     tags: lib.tags,
     settings: lib.settings,
     studyLog: lib.studyLog,
+    channels: lib.channels,
     exportedAt: new Date().toISOString(),
   }
 }
@@ -316,7 +365,7 @@ export async function exportAllData() {
 export function importBulk(data) {
   return serialize(async () => {
     const lib = await readLibrary()
-    for (const collection of ['materials', 'folders', 'tags', 'settings', 'studyLog']) {
+    for (const collection of ['materials', 'folders', 'tags', 'settings', 'studyLog', 'channels']) {
       const incoming = data[collection]
       if (!incoming?.length) continue
       const keyField = collection === 'settings' ? 'key' : 'id'
