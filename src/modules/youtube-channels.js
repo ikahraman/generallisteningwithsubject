@@ -4,10 +4,10 @@
 // videos and hitting "Generate Selected" batch-generates study material for
 // them, reusing the exact same pipeline as youtube-content.js (single-video
 // import) one video at a time, sequentially.
-import { getSetting, addMaterial, addChannel, getAllChannels, deleteChannel, updateChannelVideo, importYoutubeVideo, saveYoutubeAudio } from '../db.js'
+import { getSetting, getMaterial, addMaterial, addChannel, getAllChannels, deleteChannel, updateChannelVideo, importYoutubeVideo, saveYoutubeAudio } from '../db.js'
 import { generateMaterialJSON } from '../api/gemini.js'
 import { parseGeminiMaterialJSON } from '../utils/validators.js'
-import { countWords, estimateDuration, splitSentences } from '../utils/helpers.js'
+import { countWords, estimateDuration, splitSentences, downloadBlob, slugify } from '../utils/helpers.js'
 import { buildTranscriptAnalysisPrompt } from './transcript-analysis-prompt.js'
 import { openModal } from '../components/modal.js'
 
@@ -34,6 +34,8 @@ let generateProgress = '' // e.g. "3/12: <title>"
 // key is treated as truly unselectable. A stale 'generating' row is
 // otherwise re-checkable, or it would be stuck forever with no way to retry.
 let activeKey = null
+let isDownloadingPdfs = false
+let downloadProgress = '' // e.g. "3/6"
 
 // ---------- top-level: list of added playlists ----------
 
@@ -219,7 +221,9 @@ export async function renderYoutubeChannelDetail(container, channelId) {
   }
 
   const { done, total } = channelProgress(channel)
-  const count = selected.size
+  const { generateCount, pdfCount } = selectionCounts(channel)
+  const allEligibleSelected = channel.videos.length > 0 && channel.videos.every((v) => `${channel.id}:${v.videoId}` === activeKey || selected.has(`${channel.id}:${v.videoId}`))
+  const someSelected = channel.videos.some((v) => selected.has(`${channel.id}:${v.videoId}`))
 
   container.innerHTML = `
     <div class="page">
@@ -240,18 +244,46 @@ export async function renderYoutubeChannelDetail(container, channelId) {
           <button data-value="list" class="${videoViewMode === 'list' ? 'active' : ''}">List</button>
           <button data-value="detail" class="${videoViewMode === 'detail' ? 'active' : ''}">Detailed</button>
         </div>
-        <button class="btn primary" id="ytc-generate" ${!count || isGenerating || !apiKey ? 'disabled' : ''}>
-          ${isGenerating ? spinnerHTML() + (generateProgress || 'Generating…') : `Generate Selected${count ? ` (${count})` : ''}`}
-        </button>
+        <div class="row" style="gap:8px; flex-wrap:wrap;">
+          <button class="btn ghost" id="ytc-download-pdfs" ${!pdfCount || isDownloadingPdfs ? 'disabled' : ''}>
+            ${isDownloadingPdfs ? spinnerHTML() + `Downloading ${downloadProgress}…` : `⬇ Download Selected PDFs${pdfCount ? ` (${pdfCount})` : ''}`}
+          </button>
+          <button class="btn primary" id="ytc-generate" ${!generateCount || isGenerating || !apiKey ? 'disabled' : ''}>
+            ${isGenerating ? spinnerHTML() + (generateProgress || 'Generating…') : `Generate Selected${generateCount ? ` (${generateCount})` : ''}`}
+          </button>
+        </div>
       </div>
 
       <div class="card">
+        <label class="row" style="align-items:center; gap:10px; padding:6px 4px; margin-bottom:6px; border-bottom:1px solid var(--border); font-weight:600;">
+          <input type="checkbox" id="ytc-select-all" ${allEligibleSelected ? 'checked' : ''} />
+          <span>Select all</span>
+        </label>
         ${videoViewMode === 'list' ? videoListHTML(channel) : videoGridHTML(channel)}
       </div>
     </div>
   `
 
+  const selectAllBox = container.querySelector('#ytc-select-all')
+  if (selectAllBox) selectAllBox.indeterminate = someSelected && !allEligibleSelected
+
   wireDetailEvents(container, channelId)
+}
+
+// Split from the raw selected-keys count: "Generate Selected" should only
+// ever touch videos that actually need generating (skips anything already
+// 'done' even if its checkbox happens to be checked — checking a finished
+// video is meaningful for bulk PDF export, not for wasting another API call
+// re-generating it), while "Download Selected PDFs" is the mirror image.
+function selectionCounts(channel) {
+  let generateCount = 0
+  let pdfCount = 0
+  for (const v of channel.videos) {
+    if (!selected.has(`${channel.id}:${v.videoId}`)) continue
+    if (v.status === 'done') pdfCount++
+    else generateCount++
+  }
+  return { generateCount, pdfCount }
 }
 
 function videoListHTML(channel) {
@@ -265,7 +297,10 @@ function videoListHTML(channel) {
 function videoRowHTML(channel, v) {
   const key = `${channel.id}:${v.videoId}`
   const checked = selected.has(key)
-  const disabled = v.status === 'done' || key === activeKey
+  // 'done' videos stay checkable (unlike before) — selecting one is now
+  // meaningful for bulk PDF export, not just re-generation. Only the one
+  // truly in flight right now is locked.
+  const disabled = key === activeKey
   return `
     <label class="row" style="align-items:center; gap:10px; padding:6px 4px; border-radius:6px;" title="${escapeAttr(v.title)}">
       <input type="checkbox" data-video="${key}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''} />
@@ -288,7 +323,10 @@ function videoGridHTML(channel) {
 function videoCardHTML(channel, v) {
   const key = `${channel.id}:${v.videoId}`
   const checked = selected.has(key)
-  const disabled = v.status === 'done' || key === activeKey
+  // 'done' videos stay checkable (unlike before) — selecting one is now
+  // meaningful for bulk PDF export, not just re-generation. Only the one
+  // truly in flight right now is locked.
+  const disabled = key === activeKey
   return `
     <div class="material-card">
       <div class="card-top-row">
@@ -311,6 +349,8 @@ function statusBadgeHTML(v, isActive) {
 }
 
 function wireDetailEvents(root, channelId) {
+  const channel = channels.find((c) => c.id === channelId)
+
   root.querySelectorAll('[data-group="ytc-video-view"] button').forEach((btn) => {
     btn.addEventListener('click', () => {
       videoViewMode = btn.dataset.value
@@ -320,18 +360,43 @@ function wireDetailEvents(root, channelId) {
   })
 
   root.querySelector('#ytc-generate')?.addEventListener('click', () => handleGenerateSelected(root, channelId))
+  root.querySelector('#ytc-download-pdfs')?.addEventListener('click', () => handleDownloadSelectedPdfs(root, channelId))
+
+  root.querySelector('#ytc-select-all')?.addEventListener('change', (e) => {
+    for (const v of channel.videos) {
+      const key = `${channel.id}:${v.videoId}`
+      if (key === activeKey) continue
+      if (e.target.checked) selected.add(key)
+      else selected.delete(key)
+    }
+    renderYoutubeChannelDetail(root, channelId)
+  })
 
   root.querySelectorAll('[data-video]').forEach((cb) => {
     cb.addEventListener('change', () => {
       const key = cb.dataset.video
       if (cb.checked) selected.add(key)
       else selected.delete(key)
-      // Only the generate button's enabled/count state needs refreshing —
-      // a full re-render here would fight the checkbox's own native toggle.
-      const btn = root.querySelector('#ytc-generate')
-      if (btn) {
-        btn.disabled = !selected.size || isGenerating
-        btn.textContent = `Generate Selected${selected.size ? ` (${selected.size})` : ''}`
+      // A full re-render here would fight the checkbox's own native toggle
+      // mid-click, so only the bits that depend on the selection are
+      // patched directly instead.
+      const { generateCount, pdfCount } = selectionCounts(channel)
+      const genBtn = root.querySelector('#ytc-generate')
+      if (genBtn) {
+        genBtn.disabled = !generateCount || isGenerating
+        genBtn.textContent = `Generate Selected${generateCount ? ` (${generateCount})` : ''}`
+      }
+      const pdfBtn = root.querySelector('#ytc-download-pdfs')
+      if (pdfBtn) {
+        pdfBtn.disabled = !pdfCount || isDownloadingPdfs
+        pdfBtn.textContent = `⬇ Download Selected PDFs${pdfCount ? ` (${pdfCount})` : ''}`
+      }
+      const selectAllBox = root.querySelector('#ytc-select-all')
+      if (selectAllBox) {
+        const allSelected = channel.videos.every((v) => `${channel.id}:${v.videoId}` === activeKey || selected.has(`${channel.id}:${v.videoId}`))
+        const someSelected = channel.videos.some((v) => selected.has(`${channel.id}:${v.videoId}`))
+        selectAllBox.checked = allSelected
+        selectAllBox.indeterminate = someSelected && !allSelected
       }
     })
   })
@@ -380,6 +445,44 @@ async function handleGenerateSelected(root, channelId) {
   }
   isGenerating = false
   generateProgress = ''
+  await renderYoutubeChannelDetail(root, channelId)
+}
+
+// ---------- bulk PDF export ----------
+
+// Each selected-and-generated video's worksheet PDF, downloaded as its own
+// separate file (never merged into one document) — filenames are unique per
+// material even if two videos happen to produce very similar titles, since
+// slugify() alone isn't guaranteed collision-free. Selection is left intact
+// afterward (unlike generation, this doesn't change any video's status, so
+// there's nothing that makes re-checking them meaningless).
+async function handleDownloadSelectedPdfs(root, channelId) {
+  const channel = channels.find((c) => c.id === channelId)
+  if (!channel) return
+
+  const queue = channel.videos.filter((v) => v.status === 'done' && selected.has(`${channel.id}:${v.videoId}`))
+  if (!queue.length) return
+
+  isDownloadingPdfs = true
+  const { generateWorksheetPDF } = await import('../utils/pdf-export.js')
+  for (let i = 0; i < queue.length; i++) {
+    downloadProgress = `${i + 1}/${queue.length}`
+    await renderYoutubeChannelDetail(root, channelId)
+    try {
+      const material = await getMaterial(queue[i].materialId)
+      const pdfBlob = await generateWorksheetPDF(material, { includeAnswerKey: false })
+      downloadBlob(pdfBlob, `${slugify(material.title)}-${material.id}-worksheet.pdf`)
+    } catch (err) {
+      // Non-fatal per item — one bad material shouldn't stop the rest of the batch.
+      console.error('[youtube-channels] PDF export failed for material', queue[i].materialId, err)
+    }
+    // Browsers throttle/block rapid automatic downloads fired without a
+    // user gesture behind each one — a short gap keeps every file from
+    // actually landing instead of some being silently dropped.
+    await new Promise((r) => setTimeout(r, 400))
+  }
+  isDownloadingPdfs = false
+  downloadProgress = ''
   await renderYoutubeChannelDetail(root, channelId)
 }
 
