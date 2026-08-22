@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { id: 'library', label: 'Library', icon: '📚' },
   { id: 'statistics', label: 'Statistics', icon: '📊' },
   { id: 'settings', label: 'Settings', icon: '⚙️' },
+  { id: 'ytdlp-status', label: 'yt-dlp Status', icon: '🧩' },
 ]
 
 const STORAGE_KEY = 'sidebar-collapsed'

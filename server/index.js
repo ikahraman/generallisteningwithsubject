@@ -14,6 +14,7 @@ import { Communicate } from 'edge-tts-universal'
 import * as store from './store.js'
 import * as bbc from './bbc.js'
 import * as youtube from './youtube.js'
+import * as system from './system.js'
 
 const PORT = process.env.PORT || 5175
 
@@ -221,6 +222,16 @@ app.delete('/api/channels/:id', asyncRoute(async (req, res) => {
 app.patch('/api/channels/:channelId/videos/:videoId', asyncRoute(async (req, res) => {
   await store.updateChannelVideo(Number(req.params.channelId), req.params.videoId, req.body || {})
   res.json({ ok: true })
+}))
+
+// ---------- yt-dlp status (see system.js) ----------
+
+app.get('/api/system/ytdlp', asyncRoute(async (req, res) => {
+  res.json(await system.getStatus())
+}))
+
+app.post('/api/system/ytdlp/update', asyncRoute(async (req, res) => {
+  res.json(await system.runUpdate())
 }))
 
 // Edge's backend is unofficial and can stall mid-stream instead of erroring

@@ -9,6 +9,7 @@ import { renderContentStudio } from './modules/content-studio.js'
 import { renderBbcContent } from './modules/bbc-content.js'
 import { renderYoutubeContent } from './modules/youtube-content.js'
 import { renderYoutubeChannels, renderYoutubeChannelDetail } from './modules/youtube-channels.js'
+import { renderYtdlpStatus } from './modules/ytdlp-status.js'
 import { renderWorkspace } from './modules/workspace.js'
 import { renderLibrary } from './modules/library.js'
 import { renderDashboard } from './modules/dashboard.js'
@@ -27,6 +28,7 @@ const ROUTES = {
   library: renderLibrary,
   statistics: renderStatistics,
   settings: renderSettings,
+  'ytdlp-status': renderYtdlpStatus,
 }
 
 function parseHash() {

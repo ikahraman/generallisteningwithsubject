@@ -307,6 +307,42 @@ export function updateChannelVideo(channelId, videoId, changes) {
   return request('PATCH', `/api/channels/${channelId}/videos/${encodeURIComponent(videoId)}`, changes)
 }
 
+// ---------- yt-dlp status ----------
+// Both round-trip an external service (PyPI, or pip itself) rather than
+// just this server's own JSON store, so — same reasoning as the BBC/
+// YouTube pairs above — they get longer, explicit timeouts instead of the
+// generic request() helper's none-at-all.
+
+const YTDLP_STATUS_TIMEOUT_MS = 15000
+const YTDLP_UPDATE_TIMEOUT_MS = 70000
+
+export async function getYtdlpStatus() {
+  let res
+  try {
+    res = await fetchWithToken(`${SERVER_URL}/api/system/ytdlp`, { signal: AbortSignal.timeout(YTDLP_STATUS_TIMEOUT_MS) })
+  } catch (err) {
+    if (err.name === 'TimeoutError') throw new Error(`Timed out checking yt-dlp status after ${YTDLP_STATUS_TIMEOUT_MS / 1000}s.`)
+    throw new Error('Library server is not reachable — is it running? (npm start inside server/)')
+  }
+  if (!res.ok) throw new Error(await extractError(res))
+  return res.json()
+}
+
+export async function updateYtdlp() {
+  let res
+  try {
+    res = await fetchWithToken(`${SERVER_URL}/api/system/ytdlp/update`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(YTDLP_UPDATE_TIMEOUT_MS),
+    })
+  } catch (err) {
+    if (err.name === 'TimeoutError') throw new Error(`Update timed out after ${YTDLP_UPDATE_TIMEOUT_MS / 1000}s.`)
+    throw new Error('Library server is not reachable — is it running? (npm start inside server/)')
+  }
+  if (!res.ok) throw new Error(await extractError(res))
+  return res.json()
+}
+
 // ---------- bulk data (export/import, Settings module) ----------
 
 export function exportAllData() {
